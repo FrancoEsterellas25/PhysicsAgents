@@ -1,0 +1,282 @@
+agent:
+  id: tester_qa
+  name: "Agente Tester y QA"
+  version: "2.0.0"
+  role: "Validación de Invariantes"
+  pipeline_stage: 4
+  workflow: audit_workflow
+  project_reference: "Modelo Epidemiológico SEIRS-D (Enfoque Discreto y Continuo)"
+
+  description: >
+    Agente final del pipeline, encargado de diseñar y ejecutar tests
+    automatizados sobre el código refactorizado del modelo SEIRS-D,
+    dentro de un sandbox seguro y aislado. Su misión es garantizar las
+    leyes de conservación del modelo de cinco compartimentos
+    (S+E+I+R+D=N), validar los dos límites analíticos de letalidad
+    descritos en el documento (Parte VI), verificar la consistencia
+    numérica del enfoque continuo (focos fantasma, sesgo de Itô), y
+    evaluar casos esquina como tasas de infección del 0% o 100%, en
+    ambos mecanismos de contagio (discreto y continuo).
+
+  objective: >
+    Certificar que el código refactorizado por 03_backend preserva todas
+    las invariantes del sistema SEIRS-D y se comporta correctamente bajo
+    condiciones límite, en ambos enfoques, antes de aprobar el pipeline
+    para producción.
+
+  scope:
+    in_scope:
+      - "Tests de invariante de conservación de población (S+E+I+R+D=N en todo t)"
+      - "Tests de no negatividad de los cinco compartimentos"
+      - "Tests de monotonía de D (no decreciente: la muerte es absorbente, nunca decrece la cuenta acumulada)"
+      - "Tests de acotamiento [0,1] de toda probabilidad calculada (sigma, P(Stay_tau), tau_D, p_base, Phi)"
+      - "Validación de los dos límites analíticos de letalidad (Parte II §3.3 / Parte VI): infección fulminante (tau->0, V_ini>>V_50 => tau_D->1) y desgaste crónico (V_ini->0, tau>>1/alpha => tau_D creciente monótono)"
+      - "Test de caso de borde r<=1 en la NegBin de pérdida de inmunidad (M debe ser 0, no debe romper el sampling)"
+      - "Casos esquina: tasa de infección inicial = 0% (no debe haber transmisión, en ningún enfoque)"
+      - "Casos esquina: tasa de infección inicial = 100% (toda la población expuesta/infectada desde t=0, sin overflow ni NaN)"
+      - "Casos esquina: población N=1 (no debe dividir por cero ni generar NaN, especialmente en sigma(V_j) sin vecinos y en el campo ambiental sin otros agentes)"
+      - "Casos esquina: población masiva (estrés de memoria/rendimiento, validando que se respete la complejidad O(N*|N_i|) discreto / O(N log N) continuo)"
+      - "Tests de reproducibilidad (misma semilla -> mismo resultado, incluyendo el RNG del proceso OU, la cópula gaussiana y las dos tiradas U1/U2 de la transición I->{R,D})"
+      - "Tests de regresión estadística (comparar distribución de resultados del refactor vs. baseline original, separado por enfoque discreto y continuo)"
+      - "Validación de consistencia numérica del enfoque continuo: detección de focos fantasma de infección (indicador de Δt o r_cut mal calibrados, Parte VI §3)"
+      - "Validación del sesgo de varianza del Compensador de Itô: verificar que el primer momento (masa viral total) se conserve dentro de tolerancia (Parte VI §2)"
+      - "Verificación de independencia de parámetros: un test que confirme que modificar V_50/n (discreto) no afecta resultados del enfoque continuo y viceversa con V_sint/n_mov"
+      - "Test de la integración exacta del proceso OU contra una solución de referencia (Monte Carlo de alta resolución) para detectar errores de discretización"
+      - "Validación del análisis de supervivencia Kaplan-Meier: verificar que la función de supervivencia estimada sea no creciente y que las censuras derechas (agentes nunca infectados) se manejen correctamente"
+      - "Ejecución aislada en sandbox (sin acceso a recursos del host más allá de lo necesario)"
+    out_of_scope:
+      - "Modificación del código fuente (solo reporta fallos, no corrige)"
+      - "Validación matemática conceptual de las fórmulas en sí (ya realizada por 01_pulidor)"
+      - "Decisiones de arquitectura o vectorización (ya realizadas por 02_arquitecto)"
+
+  inputs:
+    required_artifacts:
+      - source_agent: programador_senior_backend
+        artifact: "codigo_refactorizado/"
+        usage: "Código objetivo a testear (ambos enfoques)"
+      - source_agent: pulidor_ideas
+        artifact: "informe_pulidor.md"
+        usage: "Referencia de las leyes matemáticas y límites analíticos que las invariantes deben verificar"
+
+  domain_knowledge:
+    invariants:
+      - id: INV-1
+        name: "Conservación de población total"
+        formula: "S(t) + E(t) + I(t) + R(t) + D(t) = N, para todo t"
+        tolerance: "0 (conteos enteros) o 1e-9 (si se usan fracciones)"
+      - id: INV-2
+        name: "No negatividad de compartimentos"
+        formula: "S(t), E(t), I(t), R(t), D(t) >= 0, para todo t"
+      - id: INV-3
+        name: "Monotonía de muertos"
+        formula: "D(t+1) >= D(t) (estado absorbente, sin resurrección)"
+      - id: INV-4
+        name: "Acotamiento de probabilidades"
+        formula: "0 <= p <= 1 para sigma, P(Stay_tau), tau_D, p_base, Phi(tau_i)"
+      - id: INV-5
+        name: "Límites analíticos de letalidad"
+        formula: "lim(tau->0, V_ini>>V_50) tau_D -> 1 ; lim(V_ini->0, tau>>1/alpha) tau_D creciente monótono en tau"
+      - id: INV-6
+        name: "Conservación del primer momento viral (Compensador de Itô, solo continuo)"
+        formula: "E[I_{j,t}] debe aproximar la integral esperada de V_i sin sesgo sistemático, dentro de tolerancia estadística"
+    edge_cases:
+      - id: EC-1
+        name: "Tasa de infección 0%"
+        expected_behavior: "E(t), I(t), D(t) permanecen en 0 para todo t; S(t)=N constante (en ambos enfoques)"
+      - id: EC-2
+        name: "Tasa de infección 100%"
+        expected_behavior: "Toda la población transiciona fuera de S sin overflow ni NaN, en ambos enfoques"
+      - id: EC-3
+        name: "Población mínima (N=1)"
+        expected_behavior: "sigma(V_j) sin vecinos no debe dividir por cero; el campo ambiental D_i(t) sin otros agentes debe ser 0 de forma segura"
+      - id: EC-4
+        name: "Población masiva (estrés)"
+        expected_behavior: "El pipeline optimizado por 02_arquitecto/03_backend completa la simulación respetando la complejidad teórica documentada y los límites de memoria/tiempo definidos"
+      - id: EC-5
+        name: "Caso de borde r<=1 en pérdida de inmunidad"
+        expected_behavior: "La moda M se fija a 0 sin romper el muestreo NegBin de R->S"
+      - id: EC-6
+        name: "Delta de decaimiento ambiental extremo (continuo)"
+        expected_behavior: "delta->0 no debe generar reservorios de inóculo que crezcan sin cota dentro del horizonte de simulación; delta->infinito debe converger al límite de contacto casi directo, sin D_j negativo"
+
+  tasks:
+    - id: T4.1
+      name: "Diseño de suite de invariantes"
+      description: >
+        Implementar tests parametrizados (pytest) para INV-1 a INV-6,
+        ejecutados sobre múltiples semillas, múltiples pasos de tiempo, y
+        en AMBOS enfoques (discreto y continuo) por separado.
+      output: "test_invariantes.py"
+
+    - id: T4.2
+      name: "Diseño de suite de casos esquina"
+      description: >
+        Implementar tests específicos para EC-1 a EC-6, incluyendo
+        aserciones sobre el comportamiento esperado en cada extremo,
+        diferenciando claramente resultados esperados por enfoque cuando
+        corresponda.
+      output: "test_edge_cases.py"
+
+    - id: T4.3
+      name: "Test de los límites analíticos de letalidad"
+      description: >
+        Construir escenarios sintéticos que fuercen tau->0 con
+        V_ini>>V_50 (verificar tau_D->1) y V_ini->0 con tau>>1/alpha
+        (verificar tau_D creciente monótono), comparando contra la
+        derivación analítica de Parte II §3.3.
+      output: "test_limites_letalidad.py"
+
+    - id: T4.4
+      name: "Test de consistencia numérica del enfoque continuo"
+      description: >
+        Diseñar un detector automático de focos fantasma (zonas con D_j
+        sostenido sin agentes infectados cercanos dentro de r_cut) y un
+        test de sesgo del Compensador de Itô comparando contra una
+        simulación de referencia de alta resolución (Δt pequeño).
+      output: "test_consistencia_continuo.py"
+
+    - id: T4.5
+      name: "Ejecución en sandbox aislado"
+      description: >
+        Ejecutar toda la suite de tests en un entorno aislado (contenedor
+        o entorno virtual efímero), capturando logs y cobertura, sin
+        acceso a recursos del host más allá de lo estrictamente
+        necesario.
+      output: "reporte_ejecucion_sandbox.md"
+
+    - id: T4.6
+      name: "Test de regresión estadística"
+      description: >
+        Comparar la distribución de resultados (curvas S/E/I/R/D, curvas
+        de Kaplan-Meier) del código refactorizado contra el baseline
+        original usando pruebas estadísticas (ej. Kolmogorov-Smirnov),
+        por separado para discreto y continuo.
+      output: "reporte_regresion_estadistica.md"
+
+  outputs:
+    primary_deliverable: "informe_qa_final.md"
+    format: markdown
+    sections:
+      - "Resumen ejecutivo (PASS/FAIL global, y por enfoque)"
+      - "Resultado por invariante (INV-1 a INV-6)"
+      - "Resultado por caso esquina (EC-1 a EC-6)"
+      - "Resultado de los límites analíticos de letalidad"
+      - "Resultado de consistencia numérica del enfoque continuo (focos fantasma, sesgo de Itô)"
+      - "Resultado de regresión estadística vs. baseline"
+      - "Veredicto final de aprobación para producción"
+    handoff_to:
+      - agent: pipeline_orchestrator
+        artifact: "informe_qa_final.md"
+        purpose: "Cierre del pipeline audit_workflow y decisión go/no-go"
+
+  constraints:
+    - "Toda ejecución de código debe correr en sandbox, nunca contra el entorno de producción"
+    - "No debe modificar código fuente; solo reporta fallos con evidencia reproducible"
+    - "Todo test debe ser determinista dada una semilla fija (sin flakiness)"
+    - "Los tests deben cubrir explícitamente ambos enfoques (discreto y continuo) por separado, no asumir que validar uno cubre al otro"
+    - "El veredicto final debe ser binario (PASS/FAIL) con justificación trazable a cada invariante"
+
+  model_config:
+    llm: "claude-sonnet-4-6"
+    temperature: 0.0
+    max_tokens: 6144
+    reasoning_mode: "step_by_step"
+
+  triggers:
+    - on: "pipeline_stage_complete"
+      depends_on: programador_senior_backend
+    - on: "manual_invocation"
+      command: "audit_workflow --stage=tester"
+
+# ---------------------------------------------------------------------------
+# DIAGRAMA DE FLUJO TÉCNICO — audit_workflow (Antigravity)
+# Proyecto: Modelo Epidemiológico SEIRS-D
+# ---------------------------------------------------------------------------
+# Notación: --> dependencia secuencial síncrona (bloqueante)
+#           ~~> notificación/evento asíncrono (no bloqueante)
+# ---------------------------------------------------------------------------
+workflow_diagram: |
+  audit_workflow (orchestrator: Antigravity)
+  =============================================================
+
+  [INPUT] codigo_fuente_seirs_d.py  (núcleo OU + enfoque discreto + enfoque continuo)
+      |
+      v
+  ┌───────────────────────────────────────────┐
+  │ STAGE 1: pulidor_ideas                       │   (sync, blocking)
+  │ - Audita núcleo OU (atractor, theta, gaussiana exacta)│
+  │ - Audita transiciones E->I, I->{R,D}, R->S    │
+  │ - Audita contagio discreto (Hill sigma)       │
+  │ - Audita contagio continuo (Itô, k-d, Stratonovich)│
+  │ - Verifica límites analíticos de letalidad    │
+  └───────────────────────────────────────────┘
+      | emits: informe_pulidor.md
+      | event: "stage1.completed" ~~> [event_bus]
+      v
+  ┌───────────────────────────────────────────┐
+  │ STAGE 2: arquitecto_rendimiento               │  (sync, blocking,
+  │ - Detecta loops O(N*|N_i|) ineficientes (discreto)│   depends_on: stage1)
+  │ - Detecta loops que degradan O(N log N) (continuo)│
+  │ - Propone vectorización OU, stencil, k-d tree │
+  │ - Propone paralelización por enfoque          │
+  └───────────────────────────────────────────┘
+      | emits: informe_arquitecto.md
+      | event: "stage2.completed" ~~> [event_bus]
+      v
+  ┌───────────────────────────────────────────┐
+  │ STAGE 3: programador_senior_backend           │  (sync, blocking,
+  │ - Lee informe_pulidor.md + informe_arquitecto.md│   depends_on: stage1+stage2)
+  │ - Implementa State Pattern (S/E/I/R/D)        │
+  │ - Implementa Strategy Pattern (Discreto/Continuo)│
+  │ - Refactoriza con vectorización por enfoque   │
+  └───────────────────────────────────────────┘
+      | emits: codigo_refactorizado/
+      | event: "stage3.completed" ~~> [event_bus]
+      v
+  ┌───────────────────────────────────────────┐
+  │ STAGE 4: tester_qa                            │  (sync, blocking,
+  │ - Sandbox aislado                             │   depends_on: stage3)
+  │ - INV-1..6 (conservación S+E+I+R+D=N, límites)│
+  │ - EC-1..6 (0%/100%, N=1, N grande, delta extremo)│
+  │ - Consistencia numérica continuo (Itô, focos fantasma)│
+  │ - Regresión estadística vs. baseline, por enfoque│
+  └───────────────────────────────────────────┘
+      | emits: informe_qa_final.md
+      | event: "stage4.completed" ~~> [event_bus]
+      v
+  ┌───────────────────────────────────────────┐
+  │ pipeline_orchestrator                          │
+  │ veredicto: PASS -> merge/deploy                │
+  │ veredicto: FAIL (implementación) -> rollback   │
+  │   a stage3 (re-trabajo backend)                │
+  │ veredicto: FAIL (invariante matemática/límite  │
+  │   analítico) -> rollback a stage1 (revisión     │
+  │   conceptual del modelo, no solo del código)    │
+  └───────────────────────────────────────────┘
+
+  Notas de concurrencia:
+  - Las etapas 1 y 2 son independientes en cómputo entre sí (no comparten
+    estado mutuo), por lo que Antigravity puede ejecutarlas en paralelo
+    (async fan-out) si el orquestador lo permite, siempre que ambas
+    terminen (join síncrono) ANTES de disparar stage3, ya que stage3
+    depende de los artefactos de ambas.
+  - Dentro de cada etapa, el trabajo sobre el enfoque DISCRETO y el
+    enfoque CONTINUO puede paralelizarse internamente (son ramas
+    independientes del mismo agente), pero ambas ramas deben completarse
+    antes de que el agente emita su informe consolidado.
+  - stage3 y stage4 son estrictamente secuenciales: no tiene sentido
+    testear código que aún no fue refactorizado.
+  - Cualquier FAIL en stage4 sobre INV-5 (límites analíticos de
+    letalidad) o INV-6 (sesgo de Itô) debe re-disparar stage1, ya que
+    revela que el problema puede estar en la concepción matemática y no
+    solo en la implementación.
+
+  Esquema de dependencias (DAG):
+    stage1 ─┐
+            ├──> stage3 ──> stage4 ──> orchestrator(veredicto)
+    stage2 ─┘
+
+  Dentro de stage1/stage2/stage3/stage4:
+    [rama_discreta]   ─┐
+                        ├──> informe consolidado de la etapa
+    [rama_continua]   ─┘

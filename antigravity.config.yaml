@@ -1,0 +1,31 @@
+# antigravity.config.yaml
+version: "2.0"
+
+# 1. Configuración del espacio de trabajo local
+workspace:
+  name: "auditoria_simulacion_epidemia"
+  agents_path: "./.antigravity/agents"      # Ruta relativa hacia tu carpeta oculta
+  environment: "development"
+
+# 2. Orquestación del Modo Debate (Crew / Swarm)
+crew_settings:
+  # Definimos al Backend Senior como el moderador para que filtre y consolide las ideas
+  manager_agent: "BackendSenior"   
+  
+  # Permitimos que hablen de forma asíncrona e interrumpan si ven un error matemático o de código
+  allow_interruption: true         
+  
+  # Límites de seguridad para evitar que los agentes se queden discutiendo infinitamente
+  max_turns: 15                    
+  consensus_threshold: 0.8         
+
+# 3. Canales de comunicación interna de Antigravity
+memory_bridge:
+  # Habilita una "pizarra virtual" donde cada agente lee lo que escribieron los demás en tiempo real
+  shared_board: true               
+  persistence: false               # Al terminar el comando, limpia la memoria de la sesión corta
+
+# 4. Herramientas globales permitidas en el entorno (Sandboxing)
+runtime_restrictions:
+  allow_file_write: true           # Necesario para que el Backend pueda guardar el código refactorizado
+  safe_mode: true                  # Evita que se ejecuten comandos del sistema operativo no autorizados
