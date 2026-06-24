@@ -99,8 +99,23 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         noise_y = np.random.normal(0.0, 1.0, self.N)
         
         # Stratonovich: usamos el coeficiente en t_n+1 (difusividad evaluada con el V corregido)
-        pred_x = np.clip(self.coord_x + np.sqrt(2.0 * D_esp * self.dt) * noise_x, 0.0, self.L)
-        pred_y = np.clip(self.coord_y + np.sqrt(2.0 * D_esp * self.dt) * noise_y, 0.0, self.L)
+        pred_x = self.coord_x + np.sqrt(2.0 * D_esp * self.dt) * noise_x
+        pred_y = self.coord_y + np.sqrt(2.0 * D_esp * self.dt) * noise_y
+        
+        # Condiciones de borde reflectantes
+        # Eje X
+        mask_low_x = (pred_x < 0.0)
+        pred_x[mask_low_x] = -pred_x[mask_low_x]
+        mask_high_x = (pred_x > self.L)
+        pred_x[mask_high_x] = 2.0 * self.L - pred_x[mask_high_x]
+        pred_x = np.clip(pred_x, 0.0, self.L)
+        
+        # Eje Y
+        mask_low_y = (pred_y < 0.0)
+        pred_y[mask_low_y] = -pred_y[mask_low_y]
+        mask_high_y = (pred_y > self.L)
+        pred_y[mask_high_y] = 2.0 * self.L - pred_y[mask_high_y]
+        pred_y = np.clip(pred_y, 0.0, self.L)
         
         # --- 3. EVALUACIÓN DEL CAMPO PREDICHO ---
         coords_pred = np.column_stack((pred_x, pred_y))

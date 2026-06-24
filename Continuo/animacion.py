@@ -25,7 +25,7 @@ class EscenaEpidemiologicaContinuo(Scene):
         # Encontrar límites espaciales (L se asume por los datos)
         max_x_val = df_dinamico["coord_x"].max()
         max_y_val = df_dinamico["coord_y"].max()
-        L = max(100.0, float(max(max_x_val, max_y_val)))
+        L = float(max(max_x_val, max_y_val))
 
         # 2. DEFINICIÓN DE COLORES
         COLOR_MAP = {
