@@ -13,7 +13,7 @@ from continuous_simulation import ContinuousSEIRSDSimulation
 # =====================================================================
 
 # 1. PARÁMETROS DEL ESPACIO FISICO Y SIMULACIÓN
-N_AGENTES = 1600
+N_AGENTES = 500
 L_ESPACIO = 100.0
 DIAS_SIMULACION = 60
 SEMILLA_INICIAL = 42

@@ -99,9 +99,9 @@ class EscenaEpidemiologicaContinuo(Scene):
             textos_conteo.append(t)
             self.add(t)
 
-        # Ejes para las curvas de evolución
+        # Ejes para las curvas de evolución (eje X en días físicos reales)
         axes = Axes(
-            x_range=[0, max(10, T_max), max(1, T_max//5)],
+            x_range=[0, float(tiempos[-1]), max(1.0, float(tiempos[-1])/5.0)],
             y_range=[0, N, max(1, N//4)],
             x_length=5.5,
             y_length=3.0,
@@ -112,18 +112,19 @@ class EscenaEpidemiologicaContinuo(Scene):
         curvas = [VMobject(color=COLOR_MAP[i], stroke_width=3) for i in range(5)]
         for idx_c, c in enumerate(curvas):
             self.add(c)
-            c.set_points_as_corners([axes.c2p(0, conteo_t0[idx_c]), axes.c2p(0, conteo_t0[idx_c])])
+            c.set_points_as_corners([axes.c2p(0.0, conteo_t0[idx_c]), axes.c2p(0.0, conteo_t0[idx_c])])
 
-        # Precomputar conteos históricos para optimizar curvas
+        # Precomputar conteos históricos para optimizar curvas (filtrando por valor real de tiempo)
         historico_conteos = np.zeros((T_max, 5))
-        for t in range(T_max):
-            df_t = df_dinamico.filter(pl.col("tiempo") == t)
+        for t_idx in range(T_max):
+            df_t = df_dinamico.filter(pl.col("tiempo") == tiempos[t_idx])
             estados_t = df_t["estado"].to_numpy()
-            historico_conteos[t] = np.bincount(estados_t, minlength=5)
+            historico_conteos[t_idx] = np.bincount(estados_t, minlength=5)
 
         # 5. BUCLE DE ANIMACIÓN
         for t_idx in range(1, T_max):
-            df_t = df_dinamico.filter(pl.col("tiempo") == t_idx)
+            t_val = tiempos[t_idx]
+            df_t = df_dinamico.filter(pl.col("tiempo") == t_val)
             x_t = df_t["coord_x"].to_numpy()
             y_t = df_t["coord_y"].to_numpy()
             estado_t = df_t["estado"].to_numpy()
@@ -146,7 +147,7 @@ class EscenaEpidemiologicaContinuo(Scene):
 
             # Actualizar textos del Dashboard
             conteo_actual = historico_conteos[t_idx]
-            nuevo_dia = Text(f"Día: {t_idx}", font_size=24, color=YELLOW).move_to([dash_x, 3.0, 0])
+            nuevo_dia = Text(f"Día: {t_val:.1f}", font_size=24, color=YELLOW).move_to([dash_x, 3.0, 0])
             dia_text.become(nuevo_dia)
             
             for idx in range(5):
@@ -155,9 +156,9 @@ class EscenaEpidemiologicaContinuo(Scene):
                 nuevo_t.shift(LEFT * 1.5)
                 textos_conteo[idx].become(nuevo_t)
                 
-            # Actualizar Curvas
+            # Actualizar Curvas usando la coordenada de tiempo física real
             for idx in range(5):
-                pts = [axes.c2p(time_step, historico_conteos[time_step, idx]) for time_step in range(t_idx + 1)]
+                pts = [axes.c2p(tiempos[time_step], historico_conteos[time_step, idx]) for time_step in range(t_idx + 1)]
                 curvas[idx].set_points_as_corners(pts)
 
             self.wait(0.5)
