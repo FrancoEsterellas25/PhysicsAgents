@@ -115,16 +115,18 @@ class ManimSEIRSDSimulation:
         theta_fase = np.where(tau < self.tau_peak, self.theta_low, self.theta_high)
         theta = theta_fase * (1.0 + self.beta_ou * w_ad)
         
-        # Mu
-        v_peak = self.v_peak_base * (1.0 - 0.5 * w_ad) # Mayor w_ad -> Menor peak
-        mu = self.v_base + (v_peak - self.v_base) * (1.0 - np.exp(-self.k_ou * tau))
-        
-        # Sigma
+        v_peak = self.v_peak_base * (1.0 - 0.5 * w_ad)
         sigma = self.sigma_base * (1.0 - 0.5 * w_ad)
-        
         dt = 1.0
         term1 = v_t * np.exp(-theta * dt)
-        term2 = mu * (1.0 - np.exp(-theta * dt))
+
+        # Integración exacta de la deriva con media dependiente del tiempo mu(s)
+        diff = theta - self.k_ou
+        term2 = np.where(
+            np.abs(diff) > 1e-5,
+            v_peak * (1.0 - np.exp(-theta * dt)) - (v_peak - self.v_base) * np.exp(-self.k_ou * tau) * (theta / diff) * (np.exp(-self.k_ou * dt) - np.exp(-theta * dt)),
+            v_peak * (1.0 - np.exp(-theta * dt)) - (v_peak - self.v_base) * np.exp(-self.k_ou * tau) * (theta * dt * np.exp(-theta * dt))
+        )
         std_dev = sigma * np.sqrt((1.0 - np.exp(-2.0 * theta * dt)) / (2.0 * theta))
         noise = np.random.normal(0, 1, size=len(v_t))
         
