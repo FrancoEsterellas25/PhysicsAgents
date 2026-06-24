@@ -1,6 +1,11 @@
 import numpy as np
 import polars as pl
+import sys
 from pathlib import Path
+
+# Añadir el directorio padre al sys.path para poder importar 'core'
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 from scipy.spatial import KDTree
 from core.base_simulation import BaseSEIRSDSimulation
 
