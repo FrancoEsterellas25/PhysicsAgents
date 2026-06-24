@@ -160,7 +160,7 @@ class BaseSEIRSDSimulation:
         if np.any(exiting):
             idx_exiting = np.where(mask_I)[0][exiting]
             
-            auc_norm = self.auc[idx_exiting] / self.auc_norm_factor
+            auc_norm = np.clip(self.auc[idx_exiting] / self.auc_norm_factor, 0.0, 1.0) # ponytail: evitar que fluctuaciones estocasticas superen 1.0
             tau_ratio = np.clip(self.time_in_I[idx_exiting] / self.tau_max, 0, 1)
             
             # Índice de estrés biológico neto
