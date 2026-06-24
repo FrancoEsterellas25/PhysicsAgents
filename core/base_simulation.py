@@ -99,7 +99,11 @@ class BaseSEIRSDSimulation:
             print(f"Exportado {path_dir / 'mapa_estatico.parquet'}")
 
     def seed_infection(self, n=5, seed=None):
-        """Inyecta el patógeno en n agentes al azar. Permite semilla para reproducibilidad."""
+        """
+        Inyecta el patógeno en n agentes mediante una siembra aleatoria uniforme (Random Uniform Seeding)
+        sin reemplazo sobre el total de la población N.
+        Fija la semilla del generador para reproducibilidad exacta del subconjunto de pacientes cero I₀.
+        """
         if seed is not None:
             np.random.seed(seed)
         idx = np.random.choice(self.N, n, replace=False)

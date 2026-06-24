@@ -371,7 +371,7 @@ $$\text{Estado}_m = I, \qquad t^{inf}_{m} = 0, \qquad v_m(0) = v_{base} + \varep
 
 donde ε > 0 representa la siembra viral inicial. El resto de la población mantiene el vector de estado susceptible basal.
 
-**Nota sobre la elección de I₀:** La selección del subconjunto semilla no es trivial. Una siembra aleatoria uniforme produce dinámicas iniciales distintas a una siembra geográficamente concentrada (clúster) o estratificada por perfil inmune. Para reproducibilidad, se recomienda fijar la semilla del generador pseudoaleatorio y documentar explícitamente el criterio de selección de I₀.
+**Nota sobre la elección de I₀ y Criterio de Selección:** En la implementación de este modelo, el subconjunto de pacientes cero $I_0$ se selecciona mediante una **Siembra Aleatoria Uniforme (Random Uniform Seeding)** sin reemplazo sobre el total de la población de agentes ($N$). Esto se realiza fijando de manera determinista la semilla del generador pseudoaleatorio en `42` antes del muestreo para garantizar la reproducibilidad exacta de la simulación. Enfoques geográficamente concentrados (clústers) o de estratificación inmunológica no están activos por defecto en esta versión.
 
 ---
 
