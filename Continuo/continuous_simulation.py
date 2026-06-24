@@ -28,10 +28,6 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.V_sint = 0.5        # Umbral de inhibición motora (carga viral)
         self.n_mov = 2.0         # Exponente de Hill para movimiento
         
-        # Transición S -> E
-        self.k_E = 2
-        self.p_E = 0.5
-        
         # Coordenadas iniciales continuas: x_i(0) ~ Uniforme([0, L]^2)
         self.coord_x = np.random.uniform(0.0, self.L, self.N).astype(np.float32)
         self.coord_y = np.random.uniform(0.0, self.L, self.N).astype(np.float32)

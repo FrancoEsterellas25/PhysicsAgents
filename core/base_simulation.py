@@ -33,6 +33,8 @@ class BaseSEIRSDSimulation:
         # Contagio y Biología Común
         self.alpha = 0.1         # Probabilidad base salida de I
         self.p_base = 1.0 - (0.992)**(1.0/365.0) # Mortalidad demográfica base diaria
+        self.k_E = 2             # Etapas de incubación (Binomial Negativa)
+        self.p_E = 0.5           # Probabilidad geométrica en incubación
         
         # Letalidad (Logística)
         self.w1 = 0.6

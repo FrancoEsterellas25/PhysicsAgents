@@ -22,10 +22,6 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
         self.n_hill = 2.0
         self.v50 = None
         
-        # Parámetros Transición S -> E
-        self.k_E = 2
-        self.p_E = 0.5
-        
         # Coordenadas de la grilla
         y_idx, x_idx = np.indices(grid_size)
         self.coord_x = x_idx.flatten().astype(np.int16)
