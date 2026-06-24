@@ -39,14 +39,13 @@ class BaseSEIRSDSimulation:
         self.w2 = 0.4
         self.lam = 5.0
         self.tau_max = 20.0
-        # Normalización analítica del AUC: aproximación del área máxima posible
-        # (pico viral sostenido a lo largo del tiempo máximo de desgaste).
-        self.auc_norm_factor = self.v_peak_base * self.tau_max 
+        # Normalización analítica del AUC (se calcula en Fase 0 tras posibles cambios de hiperparámetros)
+        self.auc_norm_factor = None
         
         # Parámetros clínicos para pérdida de inmunidad (R -> S)
         self.mu_R = 180.0       # Media de días en estado R (ej: ~6 meses)
         self.M_R = 150.0        # Moda de días en estado R
-        self.k_R, self.p_R = resolver_negbin_params(self.mu_R, self.M_R)
+        self.k_R, self.p_R = None, None
         
         # Estados: 0=S, 1=E, 2=I, 3=R, 4=D
         self.S, self.E, self.I, self.R, self.D = 0, 1, 2, 3, 4
@@ -82,6 +81,8 @@ class BaseSEIRSDSimulation:
             self.beta_in_a, self.beta_in_b,
             self.beta_ad_a, self.beta_ad_b
         )
+        self.auc_norm_factor = self.v_peak_base * self.tau_max
+        self.k_R, self.p_R = resolver_negbin_params(self.mu_R, self.M_R)
         
         # Si se provee output_dir, exportamos mapa_estatico.parquet
         if output_dir is not None:
