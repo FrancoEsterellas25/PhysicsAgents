@@ -32,11 +32,13 @@ def integrar_sde_ou_exacto(v_t, tau, w_ad, theta_low, theta_high, tau_peak, beta
     term1 = v_t * np.exp(-theta * dt)
     
     # Solución analítica del atractor dinámico mu(s) = v_base + (v_peak - v_base)*(1 - e^{-k*s})
+    # Se evalúa en el punto medio (tau + dt/2) para mayor precisión en la fase ascendente.
     diff = theta - k_ou
+    tau_mid = tau + dt / 2.0
     term2 = np.where(
         np.abs(diff) > 1e-5,
-        v_peak * (1.0 - np.exp(-theta * dt)) - (v_peak - v_base) * np.exp(-k_ou * tau) * (theta / diff) * (np.exp(-k_ou * dt) - np.exp(-theta * dt)),
-        v_peak * (1.0 - np.exp(-theta * dt)) - (v_peak - v_base) * np.exp(-k_ou * tau) * (theta * dt * np.exp(-theta * dt))
+        v_peak * (1.0 - np.exp(-theta * dt)) - (v_peak - v_base) * np.exp(-k_ou * tau_mid) * (theta / diff) * (np.exp(-k_ou * dt) - np.exp(-theta * dt)),
+        v_peak * (1.0 - np.exp(-theta * dt)) - (v_peak - v_base) * np.exp(-k_ou * tau_mid) * (theta * dt * np.exp(-theta * dt))
     )
     
     std_dev = sigma * np.sqrt((1.0 - np.exp(-2.0 * theta * dt)) / (2.0 * theta))

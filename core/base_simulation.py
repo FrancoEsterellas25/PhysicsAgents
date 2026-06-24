@@ -1,7 +1,7 @@
 import numpy as np
 import polars as pl
 from pathlib import Path
-from core.biology import generar_perfiles_inmunes, integrar_sde_ou_exacto
+from core.biology import generar_perfiles_inmunes, integrar_sde_ou_exacto, resolver_negbin_params
 
 class BaseSEIRSDSimulation:
     def __init__(self, N, t_max=30):
@@ -39,7 +39,14 @@ class BaseSEIRSDSimulation:
         self.w2 = 0.4
         self.lam = 5.0
         self.tau_max = 20.0
-        self.auc_norm_factor = 100.0 # Factor de normalización aproximado del AUC
+        # Normalización analítica del AUC: aproximación del área máxima posible
+        # (pico viral sostenido a lo largo del tiempo máximo de desgaste).
+        self.auc_norm_factor = self.v_peak_base * self.tau_max 
+        
+        # Parámetros clínicos para pérdida de inmunidad (R -> S)
+        self.mu_R = 180.0       # Media de días en estado R (ej: ~6 meses)
+        self.M_R = 150.0        # Moda de días en estado R
+        self.k_R, self.p_R = resolver_negbin_params(self.mu_R, self.M_R)
         
         # Estados: 0=S, 1=E, 2=I, 3=R, 4=D
         self.S, self.E, self.I, self.R, self.D = 0, 1, 2, 3, 4
@@ -88,12 +95,14 @@ class BaseSEIRSDSimulation:
             df_estatico.write_parquet(path_dir / "mapa_estatico.parquet", compression="snappy")
             print(f"Exportado {path_dir / 'mapa_estatico.parquet'}")
 
-    def seed_infection(self, n=5):
-        """Inyecta el patógeno en n agentes al azar."""
+    def seed_infection(self, n=5, seed=None):
+        """Inyecta el patógeno en n agentes al azar. Permite semilla para reproducibilidad."""
+        if seed is not None:
+            np.random.seed(seed)
         idx = np.random.choice(self.N, n, replace=False)
         self.state[idx] = self.I
         self.viral_load[idx] = self.v_base + self.eps
-        self.time_in_I[idx] = 1
+        self.time_in_I[idx] = 0
 
     def _fase1_ou_y_auc(self):
         """Integración SDE-OU exacta y actualización del AUC para el estado I."""
@@ -160,8 +169,8 @@ class BaseSEIRSDSimulation:
             
             self.state[idx_D] = self.D
             self.state[idx_R] = self.R
-            # Pérdida de inmunidad modelada vía NegBin
-            self.time_in_R[idx_R] = np.random.negative_binomial(4, 0.1, size=len(idx_R))
+            # Pérdida de inmunidad modelada vía NegBin matemática
+            self.time_in_R[idx_R] = np.random.negative_binomial(self.k_R, self.p_R, size=len(idx_R))
             
         # 4. R -> S (Pérdida de inmunidad)
         mask_R = (self.state == self.R) & ~dies_base
@@ -182,12 +191,15 @@ class BaseSEIRSDSimulation:
         self.telemetry['estado'].append(self.state.copy())
         self.telemetry['carga_viral'].append(self.viral_load.copy())
 
-    def run(self, output_dir=None):
+    def run(self, output_dir=None, n_seed=10, seed=None):
         """Bucle principal de la simulación."""
         self._fase0_inicializacion(output_dir=output_dir)
-        self.seed_infection(n=10)
+        self.seed_infection(n=n_seed, seed=seed)
         
-        for t in range(self.t_max):
+        # Guardar la foto exacta del Día 0 (con los pacientes cero recién inyectados)
+        self._fase5_buffer(0)
+        
+        for t in range(1, self.t_max + 1):
             self._fase1_ou_y_auc()
             self._fase2_contagio()
             self._fase3_transiciones()
