@@ -1,0 +1,218 @@
+import numpy as np
+import polars as pl
+from pathlib import Path
+from core.biology import generar_perfiles_inmunes, integrar_sde_ou_exacto
+
+class BaseSEIRSDSimulation:
+    def __init__(self, N, t_max=30):
+        """
+        Clase base unificada para la simulación del Modelo Epidemiológico SEIRS-D.
+        Contiene el Núcleo Biológico Universal y las transiciones de compartimentos comunes.
+        """
+        self.N = N
+        self.t_max = t_max
+        
+        # Parámetros Globales (Por defecto del Núcleo Biológico)
+        self.rho = 0.5           # Correlación sistémica (Cópula)
+        self.beta_in_a = 2.0     # Forma Alpha Beta_in
+        self.beta_in_b = 2.0     # Forma Beta Beta_in
+        self.beta_ad_a = 2.0     # Forma Alpha Beta_ad
+        self.beta_ad_b = 5.0     # Forma Beta Beta_ad
+        
+        # Parámetros SDE-OU (Dinámica Viral)
+        self.theta_low = 0.1
+        self.theta_high = 0.5
+        self.tau_peak = 5
+        self.beta_ou = 0.5       # Sensibilidad theta a omega_ad
+        self.v_base = 0.1
+        self.v_peak_base = 10.0
+        self.k_ou = 0.3
+        self.sigma_base = 1.0
+        self.eps = 0.01          # Ruido inicial viral
+        
+        # Contagio y Biología Común
+        self.alpha = 0.1         # Probabilidad base salida de I
+        self.p_base = 1.0 - (0.992)**(1.0/365.0) # Mortalidad demográfica base diaria
+        
+        # Letalidad (Logística)
+        self.w1 = 0.6
+        self.w2 = 0.4
+        self.lam = 5.0
+        self.tau_max = 20.0
+        self.auc_norm_factor = 100.0 # Factor de normalización aproximado del AUC
+        
+        # Estados: 0=S, 1=E, 2=I, 3=R, 4=D
+        self.S, self.E, self.I, self.R, self.D = 0, 1, 2, 3, 4
+        
+        # Arrays de estado de los agentes
+        self.id_agente = np.arange(self.N, dtype=np.int32)
+        self.state = np.zeros(self.N, dtype=np.int8)
+        self.viral_load = np.zeros(self.N, dtype=np.float32)
+        self.auc = np.zeros(self.N, dtype=np.float32)
+        
+        # Tiempos acumulados por compartimento
+        self.time_in_E = np.zeros(self.N, dtype=np.int16)
+        self.time_in_I = np.zeros(self.N, dtype=np.int16)
+        self.time_in_R = np.zeros(self.N, dtype=np.int16)
+        
+        # Perfiles inmunológicos (se inicializan en Fase 0)
+        self.omega_in = None
+        self.omega_ad = None
+        
+        # Buffer de Telemetría Dinámica
+        self.telemetry = {
+            'tiempo': [],
+            'id_agente': [],
+            'estado': [],
+            'carga_viral': []
+        }
+
+    def _fase0_inicializacion(self, output_dir=None):
+        """Inicializa perfiles inmunes correlacionados y exporta el mapa estático."""
+        self.omega_in, self.omega_ad = generar_perfiles_inmunes(
+            self.N, self.rho,
+            self.beta_in_a, self.beta_in_b,
+            self.beta_ad_a, self.beta_ad_b
+        )
+        
+        # Si se provee output_dir, exportamos mapa_estatico.parquet
+        if output_dir is not None:
+            path_dir = Path(output_dir)
+            path_dir.mkdir(parents=True, exist_ok=True)
+            
+            df_estatico = pl.DataFrame({
+                "id_agente": self.id_agente,
+                "omega_in": self.omega_in,
+                "omega_ad": self.omega_ad
+            })
+            df_estatico.write_parquet(path_dir / "mapa_estatico.parquet", compression="snappy")
+            print(f"Exportado {path_dir / 'mapa_estatico.parquet'}")
+
+    def seed_infection(self, n=5):
+        """Inyecta el patógeno en n agentes al azar."""
+        idx = np.random.choice(self.N, n, replace=False)
+        self.state[idx] = self.I
+        self.viral_load[idx] = self.v_base + self.eps
+        self.time_in_I[idx] = 1
+
+    def _fase1_ou_y_auc(self):
+        """Integración SDE-OU exacta y actualización del AUC para el estado I."""
+        mask_I = (self.state == self.I)
+        if not np.any(mask_I):
+            return
+            
+        tau = self.time_in_I[mask_I]
+        w_ad = self.omega_ad[mask_I]
+        v_t = self.viral_load[mask_I]
+        
+        # Integración exacta del proceso OU
+        v_next = integrar_sde_ou_exacto(
+            v_t, tau, w_ad,
+            self.theta_low, self.theta_high, self.tau_peak, self.beta_ou,
+            self.v_peak_base, self.v_base, self.k_ou, self.sigma_base, dt=1.0
+        )
+        
+        # AUC Aproximación Trapezoidal
+        self.auc[mask_I] += ((v_t + v_next) / 2.0) * 1.0
+        self.viral_load[mask_I] = v_next
+
+    def _fase2_contagio(self):
+        """Mecanismo de contagio. Debe ser implementado por la subclase específica."""
+        raise NotImplementedError("El mecanismo de contagio de la fase 2 debe implementarse por el enfoque específico (Discreto/Continuo)")
+
+    def _fase3_transiciones(self):
+        """E->I, I->R, I->D, R->S y p_base."""
+        # 1. Ruido de Fondo (Mortalidad demográfica base)
+        alive = (self.state != self.D)
+        dies_base = alive & (np.random.rand(self.N) < self.p_base)
+        self.state[dies_base] = self.D
+        
+        # 2. E -> I (Transición tras incubación en NegBin(2, 0.5))
+        mask_E = (self.state == self.E) & ~dies_base
+        ready_to_I = mask_E & (self.time_in_E <= 0)
+        self.state[ready_to_I] = self.I
+        self.viral_load[ready_to_I] = self.v_base + self.eps
+        self.time_in_I[ready_to_I] = 0
+        self.auc[ready_to_I] = 0.0
+        self.time_in_E[mask_E & ~ready_to_I] -= 1
+        
+        # 3. I -> R o D (Letalidad basada en estrés biológico neto y capacidad adaptativa)
+        mask_I = (self.state == self.I) & ~dies_base & ~ready_to_I
+        self.time_in_I[mask_I] += 1
+        
+        p_exit = 1.0 - np.exp(-self.alpha * self.time_in_I[mask_I])
+        exiting = (np.random.rand(np.sum(mask_I)) < p_exit)
+        
+        if np.any(exiting):
+            idx_exiting = np.where(mask_I)[0][exiting]
+            
+            auc_norm = self.auc[idx_exiting] / self.auc_norm_factor
+            tau_ratio = np.clip(self.time_in_I[idx_exiting] / self.tau_max, 0, 1)
+            
+            # Índice de estrés biológico neto
+            E_index = self.w1 * auc_norm + self.w2 * tau_ratio
+            # Umbral de letalidad individualizado
+            mu_v = 1.0 / (1.0 + np.exp(-self.lam * (E_index - self.omega_ad[idx_exiting])))
+            
+            dies_virus = (np.random.rand(len(idx_exiting)) <= mu_v)
+            idx_D = idx_exiting[dies_virus]
+            idx_R = idx_exiting[~dies_virus]
+            
+            self.state[idx_D] = self.D
+            self.state[idx_R] = self.R
+            # Pérdida de inmunidad modelada vía NegBin
+            self.time_in_R[idx_R] = np.random.negative_binomial(4, 0.1, size=len(idx_R))
+            
+        # 4. R -> S (Pérdida de inmunidad)
+        mask_R = (self.state == self.R) & ~dies_base
+        ready_to_S = mask_R & (self.time_in_R <= 0)
+        self.state[ready_to_S] = self.S
+        self.time_in_R[mask_R & ~ready_to_S] -= 1
+
+    def _fase4_congelamiento(self):
+        """Fuerza invariantes físicas sobre el estado D."""
+        mask_D = (self.state == self.D)
+        self.viral_load[mask_D] = 0.0
+        self.auc[mask_D] = 0.0
+
+    def _fase5_buffer(self, t):
+        """Guarda el estado actual en el buffer de telemetría."""
+        self.telemetry['tiempo'].append(np.full(self.N, t, dtype=np.int16))
+        self.telemetry['id_agente'].append(self.id_agente.copy())
+        self.telemetry['estado'].append(self.state.copy())
+        self.telemetry['carga_viral'].append(self.viral_load.copy())
+
+    def run(self, output_dir=None):
+        """Bucle principal de la simulación."""
+        self._fase0_inicializacion(output_dir=output_dir)
+        self.seed_infection(n=10)
+        
+        for t in range(self.t_max):
+            self._fase1_ou_y_auc()
+            self._fase2_contagio()
+            self._fase3_transiciones()
+            self._fase4_congelamiento()
+            self._fase5_buffer(t)
+            
+        # Compilación de la telemetría dinámica final
+        tiempo_arr = np.concatenate(self.telemetry['tiempo'])
+        id_arr = np.concatenate(self.telemetry['id_agente'])
+        estado_arr = np.concatenate(self.telemetry['estado'])
+        carga_arr = np.concatenate(self.telemetry['carga_viral'])
+        
+        df_dinamico = pl.DataFrame({
+            "tiempo": tiempo_arr,
+            "id_agente": id_arr,
+            "estado": estado_arr,
+            "carga_viral": carga_arr
+        })
+        
+        # ORDENAR POR TIEMPO Y LUEGO ID_AGENTE
+        df_dinamico = df_dinamico.sort(["tiempo", "id_agente"])
+        
+        if output_dir is not None:
+            path_dir = Path(output_dir)
+            df_dinamico.write_parquet(path_dir / "telemetria_dinamica.parquet", compression="snappy")
+            print(f"Exportado {path_dir / 'telemetria_dinamica.parquet'} (Orden estricto validado)")
+            
+        return df_dinamico
