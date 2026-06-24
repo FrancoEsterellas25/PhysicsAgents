@@ -52,15 +52,16 @@ class BaseSEIRSDSimulation:
         
         # Arrays de estado de los agentes
         self.id_agente = np.arange(self.N, dtype=np.int32)
+        self.dt = 1.0            # Paso de tiempo de la simulación
         self.state = np.zeros(self.N, dtype=np.int8)
         self.viral_load = np.zeros(self.N, dtype=np.float32)
         self.prev_viral_load = np.zeros(self.N, dtype=np.float32)
         self.auc = np.zeros(self.N, dtype=np.float32)
-        self.t_inf = np.full(self.N, -1, dtype=np.int16) # ponytail: -1 representa vacio (sin infeccion)
+        self.t_inf = np.full(self.N, -1.0, dtype=np.float32) # ponytail: -1.0 representa vacio (sin infeccion)
         
         # Tiempos acumulados por compartimento
         self.time_in_E = np.zeros(self.N, dtype=np.int16)
-        self.time_in_I = np.zeros(self.N, dtype=np.int16)
+        self.time_in_I = np.zeros(self.N, dtype=np.float32)
         self.time_in_R = np.zeros(self.N, dtype=np.int16)
         
         # Perfiles inmunológicos (se inicializan en Fase 0)
@@ -112,14 +113,18 @@ class BaseSEIRSDSimulation:
         self.time_in_I[idx] = 0
         self.t_inf[idx] = 0
 
-    def _fase1_ou_y_auc(self):
+    def _fase1_ou_y_auc(self, current_time=None):
         """Integración SDE-OU exacta y actualización del AUC para el estado I."""
         self.prev_viral_load = self.viral_load.copy()
         mask_I = (self.state == self.I)
         if not np.any(mask_I):
             return
             
-        tau = self.time_in_I[mask_I]
+        if current_time is not None:
+            tau = (current_time - self.dt) - self.t_inf[mask_I]
+        else:
+            tau = self.time_in_I[mask_I]
+            
         w_ad = self.omega_ad[mask_I]
         v_t = self.viral_load[mask_I]
         
@@ -127,7 +132,7 @@ class BaseSEIRSDSimulation:
         v_next, auc_inc = integrar_sde_ou_exacto(
             v_t, tau, w_ad,
             self.theta_low, self.theta_high, self.tau_peak, self.beta_ou,
-            self.v_peak_base, self.v_base, self.k_ou, self.sigma_base, dt=1.0
+            self.v_peak_base, self.v_base, self.k_ou, self.sigma_base, dt=self.dt
         )
         
         # Acumulación exacta de AUC
@@ -150,7 +155,7 @@ class BaseSEIRSDSimulation:
         ready_to_I = mask_E & (self.time_in_E <= 0)
         self.state[ready_to_I] = self.I
         self.viral_load[ready_to_I] = self.v_base + self.eps
-        self.time_in_I[ready_to_I] = 0
+        self.time_in_I[ready_to_I] = 0.0
         if t is not None:
             self.t_inf[ready_to_I] = t
         self.auc[ready_to_I] = 0.0
@@ -158,7 +163,10 @@ class BaseSEIRSDSimulation:
         
         # 3. I -> R o D (Letalidad basada en estrés biológico neto y capacidad adaptativa)
         mask_I = (self.state == self.I) & ~dies_base & ~ready_to_I
-        self.time_in_I[mask_I] += 1
+        if t is not None:
+            self.time_in_I[mask_I] = t - self.t_inf[mask_I]
+        else:
+            self.time_in_I[mask_I] += self.dt
         
         p_exit = 1.0 - np.exp(-self.alpha * self.time_in_I[mask_I])
         exiting = (np.random.rand(np.sum(mask_I)) < p_exit)
@@ -208,14 +216,15 @@ class BaseSEIRSDSimulation:
         self.seed_infection(n=n_seed, seed=seed)
         
         # Guardar la foto exacta del Día 0 (con los pacientes cero recién inyectados)
-        self._fase5_buffer(0)
+        self._fase5_buffer(0.0)
         
-        for t in range(1, self.t_max + 1):
-            self._fase1_ou_y_auc()
+        for step in range(1, self.t_max + 1):
+            current_time = step * self.dt
+            self._fase1_ou_y_auc(current_time)
             self._fase2_contagio()
-            self._fase3_transiciones(t)
+            self._fase3_transiciones(current_time)
             self._fase4_congelamiento()
-            self._fase5_buffer(t)
+            self._fase5_buffer(current_time)
             
         # Compilación de la telemetría dinámica final
         tiempo_arr = np.concatenate(self.telemetry['tiempo'])

@@ -17,6 +17,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         Compensador de Itô en Emisión y Operator Splitting.
         """
         super().__init__(N=N, t_max=t_max)
+        self.dt = 0.1            # Paso de tiempo del continuo (ej: 0.1 dias = 2.4 horas)
         self.L = L
         
         # Parámetros específicos del Enfoque Continuo
@@ -65,7 +66,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         sigma = self.sigma_base * (1.0 - 0.5 * self.omega_ad)
         
         # Compensador de Itô en la emisión: promedio trapezoidal de V_t y V_t+dt
-        emission_avg = 0.5 * (self.prev_viral_load + self.viral_load) * np.exp(0.5 * (sigma**2) * 1.0)
+        emission_avg = 0.5 * (self.prev_viral_load + self.viral_load) * np.exp(0.5 * (sigma**2) * self.dt)
         
         coords_t = np.column_stack((self.coord_x, self.coord_y))
         tree_t = KDTree(coords_t)
@@ -102,8 +103,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         noise_y = np.random.normal(0.0, 1.0, self.N)
         
         # Stratonovich: usamos el coeficiente en t_n+1 (difusividad evaluada con el V corregido)
-        pred_x = np.clip(self.coord_x + np.sqrt(2.0 * D_esp * 1.0) * noise_x, 0.0, self.L)
-        pred_y = np.clip(self.coord_y + np.sqrt(2.0 * D_esp * 1.0) * noise_y, 0.0, self.L)
+        pred_x = np.clip(self.coord_x + np.sqrt(2.0 * D_esp * self.dt) * noise_x, 0.0, self.L)
+        pred_y = np.clip(self.coord_y + np.sqrt(2.0 * D_esp * self.dt) * noise_y, 0.0, self.L)
         
         # --- 3. EVALUACIÓN DEL CAMPO PREDICHO ---
         coords_pred = np.column_stack((pred_x, pred_y))
@@ -123,7 +124,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             
         # --- 4. CORRECCIÓN Y ACTUALIZACIÓN DE DOSIS ---
         # Decaimiento ambiental δ analíticamente estable + promedio de dosis actual y predicha
-        self.dosis = self.dosis * np.exp(-self.delta * 1.0) + 0.5 * (R_t + R_pred) * 1.0
+        self.dosis = self.dosis * np.exp(-self.delta * self.dt) + 0.5 * (R_t + R_pred) * self.dt
         
         # Consolidar posiciones predichas
         self.coord_x = pred_x
@@ -154,14 +155,15 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             
         self._fase0_inicializacion(output_dir=output_dir)
         self.seed_infection(n=n_seed, seed=seed)
-        self._fase5_buffer(0)
+        self._fase5_buffer(0.0)
         
-        for t in range(1, self.t_max + 1):
-            self._fase1_ou_y_auc()
+        for step in range(1, self.t_max + 1):
+            current_time = step * self.dt
+            self._fase1_ou_y_auc(current_time)
             self._fase2_contagio()
-            self._fase3_transiciones(t)
+            self._fase3_transiciones(current_time)
             self._fase4_congelamiento()
-            self._fase5_buffer(t)
+            self._fase5_buffer(current_time)
             
         # Compilación de la telemetría dinámica final con coordenadas continuas
         tiempo_arr = np.concatenate(self.telemetry['tiempo'])
