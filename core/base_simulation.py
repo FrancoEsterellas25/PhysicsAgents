@@ -116,15 +116,15 @@ class BaseSEIRSDSimulation:
         w_ad = self.omega_ad[mask_I]
         v_t = self.viral_load[mask_I]
         
-        # Integración exacta del proceso OU
-        v_next = integrar_sde_ou_exacto(
+        # Integración exacta del proceso OU y cálculo exacto de AUC
+        v_next, auc_inc = integrar_sde_ou_exacto(
             v_t, tau, w_ad,
             self.theta_low, self.theta_high, self.tau_peak, self.beta_ou,
             self.v_peak_base, self.v_base, self.k_ou, self.sigma_base, dt=1.0
         )
         
-        # AUC Aproximación Trapezoidal
-        self.auc[mask_I] += ((v_t + v_next) / 2.0) * 1.0
+        # Acumulación exacta de AUC
+        self.auc[mask_I] += auc_inc
         self.viral_load[mask_I] = v_next
 
     def _fase2_contagio(self):

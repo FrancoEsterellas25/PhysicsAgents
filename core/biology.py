@@ -49,10 +49,11 @@ def integrar_sde_ou_exacto(v_t, tau, w_ad, theta_low, theta_high, tau_peak, beta
     mask_no_split = ~mask_split
     
     v_next = np.empty_like(v_t)
+    auc_inc = np.empty_like(v_t)
     
     if np.any(mask_no_split):
         theta_fase = np.where(tau[mask_no_split] < tau_peak, theta_low_arr[mask_no_split], theta_high_arr[mask_no_split])
-        v_next[mask_no_split] = _ou_step(
+        v_next_no_split = _ou_step(
             v_t[mask_no_split],
             tau[mask_no_split],
             theta_fase,
@@ -62,6 +63,9 @@ def integrar_sde_ou_exacto(v_t, tau, w_ad, theta_low, theta_high, tau_peak, beta
             sigma[mask_no_split],
             dt
         )
+        v_next_no_split_clipped = np.maximum(0.0, v_next_no_split)
+        v_next[mask_no_split] = v_next_no_split_clipped
+        auc_inc[mask_no_split] = 0.5 * (v_t[mask_no_split] + v_next_no_split_clipped) * dt
         
     if np.any(mask_split):
         dt1 = dt_pico[mask_split]
@@ -78,10 +82,12 @@ def integrar_sde_ou_exacto(v_t, tau, w_ad, theta_low, theta_high, tau_peak, beta
             sigma[mask_split],
             dt1
         )
+        v_star_clipped = np.maximum(0.0, v_star)
+        
         # Sub-paso 2: Desde el pico en adelante con theta_high
         tau2 = np.full_like(dt1, tau_peak)
-        v_next[mask_split] = _ou_step(
-            v_star,
+        v_next_split = _ou_step(
+            v_star_clipped,
             tau2,
             theta_high_arr[mask_split],
             v_peak[mask_split],
@@ -90,8 +96,13 @@ def integrar_sde_ou_exacto(v_t, tau, w_ad, theta_low, theta_high, tau_peak, beta
             sigma[mask_split],
             dt2
         )
+        v_next_split_clipped = np.maximum(0.0, v_next_split)
+        v_next[mask_split] = v_next_split_clipped
         
-    return np.maximum(0.0, v_next)
+        # ponytail: integracion trapezoidal de dos etapas ponderada por la fraccion del paso
+        auc_inc[mask_split] = 0.5 * (v_t[mask_split] + v_star_clipped) * dt1 + 0.5 * (v_star_clipped + v_next_split_clipped) * dt2
+        
+    return v_next, auc_inc
 
 def resolver_negbin_params(mu, M):
     """
