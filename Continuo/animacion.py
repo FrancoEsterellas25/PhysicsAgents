@@ -110,9 +110,9 @@ class EscenaEpidemiologicaContinuo(Scene):
         self.add(axes)
         
         curvas = [VMobject(color=COLOR_MAP[i], stroke_width=3) for i in range(5)]
-        for c in curvas:
+        for idx_c, c in enumerate(curvas):
             self.add(c)
-            c.set_points_as_corners([axes.c2p(0, conteo_t0[i]), axes.c2p(0, conteo_t0[i])])
+            c.set_points_as_corners([axes.c2p(0, conteo_t0[idx_c]), axes.c2p(0, conteo_t0[idx_c])])
 
         # Precomputar conteos históricos para optimizar curvas
         historico_conteos = np.zeros((T_max, 5))
