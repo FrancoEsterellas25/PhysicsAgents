@@ -62,9 +62,9 @@ class BaseSEIRSDSimulation:
         self.t_inf = np.full(self.N, -1.0, dtype=np.float32) # ponytail: -1.0 representa vacio (sin infeccion)
         
         # Tiempos acumulados por compartimento
-        self.time_in_E = np.zeros(self.N, dtype=np.int16)
+        self.time_in_E = np.zeros(self.N, dtype=np.float32)
         self.time_in_I = np.zeros(self.N, dtype=np.float32)
-        self.time_in_R = np.zeros(self.N, dtype=np.int16)
+        self.time_in_R = np.zeros(self.N, dtype=np.float32)
         
         # Perfiles inmunológicos (se inicializan en Fase 0)
         self.omega_in = None
@@ -147,21 +147,22 @@ class BaseSEIRSDSimulation:
 
     def _fase3_transiciones(self, t=None):
         """E->I, I->R, I->D, R->S y p_base."""
-        # 1. Ruido de Fondo (Mortalidad demográfica base)
+        # 1. Ruido de Fondo (Mortalidad demográfica base escalada con dt)
         alive = (self.state != self.D)
-        dies_base = alive & (np.random.rand(self.N) < self.p_base)
+        p_base_step = 1.0 - (1.0 - self.p_base) ** self.dt
+        dies_base = alive & (np.random.rand(self.N) < p_base_step)
         self.state[dies_base] = self.D
         
-        # 2. E -> I (Transición tras incubación en NegBin(2, 0.5))
+        # 2. E -> I (Transición tras incubación en NegBin(2, 0.5) medida en días)
         mask_E = (self.state == self.E) & ~dies_base
-        ready_to_I = mask_E & (self.time_in_E <= 0)
+        ready_to_I = mask_E & (self.time_in_E <= 0.0)
         self.state[ready_to_I] = self.I
         self.viral_load[ready_to_I] = self.v_base + self.eps
         self.time_in_I[ready_to_I] = 0.0
         if t is not None:
             self.t_inf[ready_to_I] = t
         self.auc[ready_to_I] = 0.0
-        self.time_in_E[mask_E & ~ready_to_I] -= 1
+        self.time_in_E[mask_E & ~ready_to_I] -= self.dt
         
         # 3. I -> R o D (Letalidad basada en estrés biológico neto y capacidad adaptativa)
         mask_I = (self.state == self.I) & ~dies_base & ~ready_to_I
@@ -170,7 +171,8 @@ class BaseSEIRSDSimulation:
         else:
             self.time_in_I[mask_I] += self.dt
         
-        p_exit = 1.0 - np.exp(-self.alpha * self.time_in_I[mask_I])
+        # Salida exponencial con media 1/alpha de días
+        p_exit = 1.0 - np.exp(-self.alpha * self.dt)
         exiting = (np.random.rand(np.sum(mask_I)) < p_exit)
         
         if np.any(exiting):
@@ -190,14 +192,14 @@ class BaseSEIRSDSimulation:
             
             self.state[idx_D] = self.D
             self.state[idx_R] = self.R
-            # Pérdida de inmunidad modelada vía NegBin matemática
+            # Pérdida de inmunidad modelada vía NegBin matemática (días)
             self.time_in_R[idx_R] = np.random.negative_binomial(self.k_R, self.p_R, size=len(idx_R))
             
-        # 4. R -> S (Pérdida de inmunidad)
+        # 4. R -> S (Pérdida de inmunidad en días)
         mask_R = (self.state == self.R) & ~dies_base
-        ready_to_S = mask_R & (self.time_in_R <= 0)
+        ready_to_S = mask_R & (self.time_in_R <= 0.0)
         self.state[ready_to_S] = self.S
-        self.time_in_R[mask_R & ~ready_to_S] -= 1
+        self.time_in_R[mask_R & ~ready_to_S] -= self.dt
 
     def _fase4_congelamiento(self):
         """Fuerza invariantes físicas sobre el estado D."""

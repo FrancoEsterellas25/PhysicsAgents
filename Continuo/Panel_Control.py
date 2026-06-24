@@ -12,28 +12,29 @@ from continuous_simulation import ContinuousSEIRSDSimulation
 # 🎛️ PANEL DE CONTROL CONTINUO - HIPERPARÁMETROS DE SIMULACIÓN Y RENDER
 # =====================================================================
 
-# 1. PARÁMETROS DEL ESPACIO FISICO Y SIMULACIÓN
+# 1. PARÁMETROS DEL ESPACIO FÍSICO Y SIMULACIÓN
 N_AGENTES = 500
-L_ESPACIO = 100.0
-DIAS_SIMULACION = 60
+L_ESPACIO = 20.0          # L=20 aumenta la densidad para lograr contagio realista
+DIAS_SIMULACION = 30      # Duración física real de la simulación en días
 SEMILLA_INICIAL = 42
 AGENTES_INFECTADOS_INICIALES = 10
-PASO_TIEMPO_DT = 1/48     # Paso de tiempo fraccional (1/48 dias = 30 minutos)
+PASO_TIEMPO_DT = 0.1      # dt=0.1 representa 2.4 horas por paso de simulación
 
 # 2. PARÁMETROS ESPECÍFICOS DEL ENFOQUE CONTINUO
 DECAIMIENTO_DELTA = 0.5   # Tasa de degradación ambiental del virus
-LONGITUD_ELL = 1.0        # Radio de propagación del aerosol
+LONGITUD_ELL = 1.5        # Radio de propagación del aerosol
 DIFUSIVIDAD_BASAL = 1.0   # Movilidad de agentes sanos
 DIFUSIVIDAD_MIN = 0.05    # Movilidad mínima (agentes severamente enfermos)
 V_SINTOMAS = 0.5          # Carga viral al 50% de inhibición motora
 EXPO_N_MOV = 2.0          # Agudeza de inhibición cinemática
 
 # 3. PARÁMETROS CLÍNICOS DEL NÚCLEO BIOLÓGICO
+TAU_MAX = 2.0            # Umbral de tolerancia de dosis máxima (reducido para L=20)
 MU_R = 180.0             # Media de días de inmunidad tras recuperación
 M_R = 150.0              # Moda de días de inmunidad
 LAMBDA_LETALIDAD = 5.0   # Sensibilidad al estrés biológico neto
-W1 = 0.6                 # Peso de la carga viral acumulada (AUC)
-W2 = 0.4                 # Peso del tiempo crónico de enfermedad
+W1 = 0.3                 # Peso de la carga viral acumulada (AUC)
+W2 = 0.7                 # Peso del tiempo crónico de enfermedad
 
 # 4. CONFIGURACIÓN DE MANIM (RENDERIZADO VISUAL)
 CALIDAD = 'l'            # Calidades: 'l' (Low), 'm' (Medium), 'h' (High)
@@ -49,11 +50,13 @@ def main():
     print(" INICIANDO SIMULACIÓN SEIRS-D CONTINUA")
     print("===================================================")
     
-    # 1. Instanciar y configurar el simulador con los hiperparámetros
+    # 1. Calcular número de pasos de simulación necesarios para simular los días deseados
+    STEPS_SIMULACION = int(DIAS_SIMULACION / PASO_TIEMPO_DT)
+    
     sim = ContinuousSEIRSDSimulation(
         N=N_AGENTES,
         L=L_ESPACIO,
-        t_max=DIAS_SIMULACION
+        t_max=STEPS_SIMULACION
     )
     
     # Sobreescribir hiperparámetros de las físicas
@@ -65,6 +68,7 @@ def main():
     sim.V_sint = V_SINTOMAS
     sim.n_mov = EXPO_N_MOV
     
+    sim.tau_max = TAU_MAX
     sim.mu_R = MU_R
     sim.M_R = M_R
     sim.lam = LAMBDA_LETALIDAD
@@ -73,6 +77,8 @@ def main():
     
     print(f"Dimensión del espacio continuo: {L_ESPACIO}x{L_ESPACIO}")
     print(f"Población: {N_AGENTES} agentes (Siembra inicial: {AGENTES_INFECTADOS_INICIALES})...")
+    print(f"Paso de tiempo continuo: dt = {PASO_TIEMPO_DT} días ({PASO_TIEMPO_DT * 24:.1f} horas)")
+    print(f"Duración: {DIAS_SIMULACION} días físicos ({STEPS_SIMULACION} pasos de simulación / frames)")
     print(f"Paso de tiempo continuo: dt = {PASO_TIEMPO_DT} días ({PASO_TIEMPO_DT * 24:.1f} horas)")
     
     # Ejecutar motor estocástico
