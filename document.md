@@ -64,13 +64,17 @@ $$\theta_{fase}(\tau_i) = \begin{cases} \theta_{low} & \text{si } \tau_i < \tau_
 - **Fase ascendente (τᵢ < τ_peak):** θ_low es bajo, permitiendo la replicación viral hacia el pico. Un individuo con alta capacidad adaptativa (ωₐd → 1) ejerce un control estocástico ligeramente superior incluso en el inicio.
 - **Fase de resolución (τᵢ ≥ τ_peak):** el sistema entra en θ_high amplificado. Un agente con ωₐd alto tendrá un θ masivo, forzando a vᵢ(t) a colapsar rápidamente hacia v_base. Un agente inmunodeprimido (ωₐd → 0) tendrá aclaramiento lento, manteniendo carga viral alta (y siendo supercontagiador) por más tiempo.
 
-#### 2.3 Integración Exacta — Transición Gaussiana
+#### 2.3 Integración Exacta y Composición de Operadores (Step-Splitting)
 
 Para evitar el error de discretización de Euler-Maruyama, se emplea la solución de transición gaussiana exacta del proceso OU:
 
 $$v_{t+\Delta t} \sim \mathcal{N}\!\left( v_t \cdot e^{-\theta \Delta t} + M(\tau_i, \Delta t),\; \sigma^2 \frac{1 - e^{-2\theta \Delta t}}{2\theta} \right)$$
 
-**Nota de implementación:** M(τᵢ, Δt) debe evaluarse en el punto medio del paso temporal para mayor precisión cuando μ(τᵢ) varía rápidamente en la fase ascendente. El valor de θ usado aquí es θ(τᵢ, ωₐd) evaluado al inicio del paso.
+**Nota de implementación (Punto Medio y Splitting de Fase):**
+1. $M(\tau_i, \Delta t)$ se evalúa en el punto medio del paso temporal para mayor precisión cuando $\mu(\tau_i)$ varía rápidamente en la fase ascendente.
+2. **Mitigación de sesgo temporal (Step-Splitting):** Cuando un agente cruza el umbral de fase $\tau_{peak}$ durante el paso temporal (es decir, $0 < \tau_{peak} - \tau_i < \Delta t$), el paso se divide secuencialmente en $\Delta t_1 = \tau_{peak} - \tau_i$ (evolucionando con $\theta_{low}$) y $\Delta t_2 = \Delta t - \Delta t_1$ (evolucionando con $\theta_{high}$ desde el estado intermedio $v^*$).
+3. **Cálculo de AUC Exacto:** Para los agentes con step-splitting, la dosis acumulada (AUC) del paso se calcula mediante la composición trapezoidal de dos etapas para evitar subestimar el pico máximo de carga viral:
+   $$\Delta \text{AUC}_{\text{split}} = \frac{v_t + v^*}{2} \cdot \Delta t_1 + \frac{v^* + v_{next}}{2} \cdot \Delta t_2$$
 
 ---
 
