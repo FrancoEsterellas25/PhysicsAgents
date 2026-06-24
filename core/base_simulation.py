@@ -54,6 +54,7 @@ class BaseSEIRSDSimulation:
         self.id_agente = np.arange(self.N, dtype=np.int32)
         self.state = np.zeros(self.N, dtype=np.int8)
         self.viral_load = np.zeros(self.N, dtype=np.float32)
+        self.prev_viral_load = np.zeros(self.N, dtype=np.float32)
         self.auc = np.zeros(self.N, dtype=np.float32)
         self.t_inf = np.full(self.N, -1, dtype=np.int16) # ponytail: -1 representa vacio (sin infeccion)
         
@@ -109,6 +110,7 @@ class BaseSEIRSDSimulation:
 
     def _fase1_ou_y_auc(self):
         """Integración SDE-OU exacta y actualización del AUC para el estado I."""
+        self.prev_viral_load = self.viral_load.copy()
         mask_I = (self.state == self.I)
         if not np.any(mask_I):
             return
