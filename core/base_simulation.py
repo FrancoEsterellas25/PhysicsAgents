@@ -207,7 +207,7 @@ class BaseSEIRSDSimulation:
 
     def _fase5_buffer(self, t):
         """Guarda el estado actual en el buffer de telemetría."""
-        self.telemetry['tiempo'].append(np.full(self.N, t, dtype=np.int16))
+        self.telemetry['tiempo'].append(np.full(self.N, t, dtype=np.float32)) # ponytail: usar float32 para admitir pasos de tiempo fraccionales
         self.telemetry['id_agente'].append(self.id_agente.copy())
         self.telemetry['estado'].append(self.state.copy())
         self.telemetry['carga_viral'].append(self.viral_load.copy())
