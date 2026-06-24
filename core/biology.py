@@ -17,22 +17,9 @@ def generar_perfiles_inmunes(N, rho, beta_in_a, beta_in_b, beta_ad_a, beta_ad_b)
     
     return omega_in, omega_ad
 
-def integrar_sde_ou_exacto(v_t, tau, w_ad, theta_low, theta_high, tau_peak, beta_ou, v_peak_base, v_base, k_ou, sigma_base, dt=1.0):
-    """
-    Integración exacta del proceso de Ornstein-Uhlenbeck con atractor dinámico dependiente de la fase.
-    Evita errores de discretización de Euler-Maruyama.
-    """
-    # Theta dependiente del tiempo de infección tau y capacidad adaptativa
-    theta_fase = np.where(tau < tau_peak, theta_low, theta_high)
-    theta = theta_fase * (1.0 + beta_ou * w_ad)
-    
-    v_peak = v_peak_base * (1.0 - 0.5 * w_ad)
-    sigma = sigma_base * (1.0 - 0.5 * w_ad)
-    
+def _ou_step(v_t, tau, theta, v_peak, v_base, k_ou, sigma, dt):
+    """Evolución analítica de un paso individual del proceso de Ornstein-Uhlenbeck."""
     term1 = v_t * np.exp(-theta * dt)
-    
-    # Solución analítica del atractor dinámico mu(s) = v_base + (v_peak - v_base)*(1 - e^{-k*s})
-    # Se evalúa en el punto medio (tau + dt/2) para mayor precisión en la fase ascendente.
     diff = theta - k_ou
     tau_mid = tau + dt / 2.0
     term2 = np.where(
@@ -40,11 +27,70 @@ def integrar_sde_ou_exacto(v_t, tau, w_ad, theta_low, theta_high, tau_peak, beta
         v_peak * (1.0 - np.exp(-theta * dt)) - (v_peak - v_base) * np.exp(-k_ou * tau_mid) * (theta / diff) * (np.exp(-k_ou * dt) - np.exp(-theta * dt)),
         v_peak * (1.0 - np.exp(-theta * dt)) - (v_peak - v_base) * np.exp(-k_ou * tau_mid) * (theta * dt * np.exp(-theta * dt))
     )
-    
     std_dev = sigma * np.sqrt((1.0 - np.exp(-2.0 * theta * dt)) / (2.0 * theta))
     noise = np.random.normal(0, 1, size=len(v_t))
+    return term1 + term2 + std_dev * noise
+
+def integrar_sde_ou_exacto(v_t, tau, w_ad, theta_low, theta_high, tau_peak, beta_ou, v_peak_base, v_base, k_ou, sigma_base, dt=1.0):
+    """
+    Integración exacta del proceso de Ornstein-Uhlenbeck con atractor dinámico dependiente de la fase.
+    Evita errores de discretización de Euler-Maruyama y aplica step-splitting en la frontera tau_peak.
+    """
+    v_peak = v_peak_base * (1.0 - 0.5 * w_ad)
+    sigma = sigma_base * (1.0 - 0.5 * w_ad)
     
-    v_next = term1 + term2 + std_dev * noise
+    theta_low_arr = theta_low * (1.0 + beta_ou * w_ad)
+    theta_high_arr = theta_high * (1.0 + beta_ou * w_ad)
+    
+    dt_pico = tau_peak - tau
+    
+    # ponytail: Máscara vectorial para detectar el cruce exacto de frontera en el intervalo
+    mask_split = (dt_pico > 0.0) & (dt_pico < dt)
+    mask_no_split = ~mask_split
+    
+    v_next = np.empty_like(v_t)
+    
+    if np.any(mask_no_split):
+        theta_fase = np.where(tau[mask_no_split] < tau_peak, theta_low_arr[mask_no_split], theta_high_arr[mask_no_split])
+        v_next[mask_no_split] = _ou_step(
+            v_t[mask_no_split],
+            tau[mask_no_split],
+            theta_fase,
+            v_peak[mask_no_split],
+            v_base,
+            k_ou,
+            sigma[mask_no_split],
+            dt
+        )
+        
+    if np.any(mask_split):
+        dt1 = dt_pico[mask_split]
+        dt2 = dt - dt1
+        
+        # Sub-paso 1: Hasta el pico con theta_low
+        v_star = _ou_step(
+            v_t[mask_split],
+            tau[mask_split],
+            theta_low_arr[mask_split],
+            v_peak[mask_split],
+            v_base,
+            k_ou,
+            sigma[mask_split],
+            dt1
+        )
+        # Sub-paso 2: Desde el pico en adelante con theta_high
+        tau2 = np.full_like(dt1, tau_peak)
+        v_next[mask_split] = _ou_step(
+            v_star,
+            tau2,
+            theta_high_arr[mask_split],
+            v_peak[mask_split],
+            v_base,
+            k_ou,
+            sigma[mask_split],
+            dt2
+        )
+        
     return np.maximum(0.0, v_next)
 
 def resolver_negbin_params(mu, M):

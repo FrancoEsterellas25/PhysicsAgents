@@ -56,6 +56,7 @@ class BaseSEIRSDSimulation:
         self.state = np.zeros(self.N, dtype=np.int8)
         self.viral_load = np.zeros(self.N, dtype=np.float32)
         self.auc = np.zeros(self.N, dtype=np.float32)
+        self.t_inf = np.full(self.N, -1, dtype=np.int16) # ponytail: -1 representa vacio (sin infeccion)
         
         # Tiempos acumulados por compartimento
         self.time_in_E = np.zeros(self.N, dtype=np.int16)
@@ -103,6 +104,7 @@ class BaseSEIRSDSimulation:
         self.state[idx] = self.I
         self.viral_load[idx] = self.v_base + self.eps
         self.time_in_I[idx] = 0
+        self.t_inf[idx] = 0
 
     def _fase1_ou_y_auc(self):
         """Integración SDE-OU exacta y actualización del AUC para el estado I."""
@@ -129,7 +131,7 @@ class BaseSEIRSDSimulation:
         """Mecanismo de contagio. Debe ser implementado por la subclase específica."""
         raise NotImplementedError("El mecanismo de contagio de la fase 2 debe implementarse por el enfoque específico (Discreto/Continuo)")
 
-    def _fase3_transiciones(self):
+    def _fase3_transiciones(self, t=None):
         """E->I, I->R, I->D, R->S y p_base."""
         # 1. Ruido de Fondo (Mortalidad demográfica base)
         alive = (self.state != self.D)
@@ -142,6 +144,8 @@ class BaseSEIRSDSimulation:
         self.state[ready_to_I] = self.I
         self.viral_load[ready_to_I] = self.v_base + self.eps
         self.time_in_I[ready_to_I] = 0
+        if t is not None:
+            self.t_inf[ready_to_I] = t
         self.auc[ready_to_I] = 0.0
         self.time_in_E[mask_E & ~ready_to_I] -= 1
         
@@ -202,7 +206,7 @@ class BaseSEIRSDSimulation:
         for t in range(1, self.t_max + 1):
             self._fase1_ou_y_auc()
             self._fase2_contagio()
-            self._fase3_transiciones()
+            self._fase3_transiciones(t)
             self._fase4_congelamiento()
             self._fase5_buffer(t)
             

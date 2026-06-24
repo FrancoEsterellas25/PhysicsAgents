@@ -20,6 +20,7 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
         self.V_50_basal = 3.0
         self.gamma_hill = 1.5
         self.n_hill = 2.0
+        self.v50 = None
         
         # Parámetros Transición S -> E
         self.k_E = 2
@@ -36,11 +37,8 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
 
     def _fase0_inicializacion(self, output_dir=None):
         """Cópula Gaussiana y Exportación del Mapa Estático con coordenadas."""
-        self.omega_in, self.omega_ad = generar_perfiles_inmunes(
-            self.N, self.rho,
-            self.beta_in_a, self.beta_in_b,
-            self.beta_ad_a, self.beta_ad_b
-        )
+        super()._fase0_inicializacion(output_dir=output_dir)
+        self.v50 = self.V_50_basal * (1.0 + self.gamma_hill * self.omega_in)
         
         # Exportar Mapa Estático con Coordenadas (Específico de Discreto)
         base_dir = Path(output_dir) if output_dir is not None else Path(__file__).parent
@@ -50,7 +48,8 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
             "coord_x": self.coord_x,
             "coord_y": self.coord_y,
             "omega_in": self.omega_in,
-            "omega_ad": self.omega_ad
+            "omega_ad": self.omega_ad,
+            "v50": self.v50
         })
         df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
         print(f"Exportado {base_dir / 'mapa_estatico.parquet'}")
@@ -59,10 +58,9 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
         """Contagio S -> E basado en matrices desplazadas (vecindad) con soporte topológico estricto."""
         state_2d = self.state.reshape(self.grid_size)
         vl_2d = self.viral_load.reshape(self.grid_size)
-        w_in_2d = self.omega_in.reshape(self.grid_size)
         
         prob_not_inf_2d = np.ones(self.grid_size, dtype=np.float32)
-        v50_mat = self.V_50_basal * (1.0 + self.gamma_hill * w_in_2d)
+        v50_mat = self.v50.reshape(self.grid_size)
 
         # Definir los desplazamientos a evaluar según topología
         # Estructura: (dr, dc, mascara_condicional)
