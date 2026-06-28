@@ -156,7 +156,8 @@ class EscenaEpidemiologicaContinuo(Scene):
 
         # 5. BUCLE DE ANIMACIÓN
         # ponytail: adapt sub-frames to target frame rate for smooth movement interpolation
-        steps_per_second = 15.0
+        import os
+        steps_per_second = float(os.environ.get("STEPS_PER_SECOND", 15.0))
         frames_per_step = max(1, int(config.frame_rate / steps_per_second))
         wait_time = 1.0 / config.frame_rate
 

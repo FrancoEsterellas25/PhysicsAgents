@@ -39,6 +39,7 @@ W2 = 0.7                 # Peso del tiempo crónico de enfermedad
 # 4. CONFIGURACIÓN DE MANIM (RENDERIZADO VISUAL)
 CALIDAD = 'l'            # Calidades: 'l' (Low), 'm' (Medium), 'h' (High)
 ABRIR_VIDEO_AL_TERMINAR = True
+VELOCIDAD_REPRODUCCION = 50.0 # Pasos dt por segundo (velocidad de los frames)
 
 # 5. PARÁMETROS DE LAS EXTENSIONES (PARTE VIII)
 HUBS_ACTIVOS = True
@@ -130,6 +131,8 @@ def main():
     print("===================================================")
     print(f" INICIANDO RENDERIZADO VISUAL EN CALIDAD '{CALIDAD.upper()}'")
     print("===================================================")
+    
+    os.environ["STEPS_PER_SECOND"] = str(VELOCIDAD_REPRODUCCION)
     
     animacion_script = str(base_dir / "animacion.py")
     flag_calidad = f"-pq{CALIDAD}" if ABRIR_VIDEO_AL_TERMINAR else f"-q{CALIDAD}"
