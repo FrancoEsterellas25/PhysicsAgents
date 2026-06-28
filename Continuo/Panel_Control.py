@@ -92,9 +92,9 @@ def main():
             [10.0, 10.0]   # Hub 2 (Plaza - Gravitatorio)
         ], dtype=np.float32)
         sim.hubs_types = ["agenda", "gravitatorio"]
-        sim.hubs_lambda = np.array([1.5, 0.0], dtype=np.float32)  # Visitas por día
-        sim.hubs_alpha = np.array([5.0, 0.0], dtype=np.float32)
-        sim.hubs_beta = np.array([0.05, 0.0], dtype=np.float32)
+        sim.hubs_lambda = np.array([5.0/7.0, 0.0], dtype=np.float32)  # Frecuencia de visita (tasa: 5 días de 7)
+        sim.hubs_alpha = np.array([12.0, 0.0], dtype=np.float32)      # Forma Gamma para estadía
+        sim.hubs_beta = np.array([0.5 / 24.0, 0.0], dtype=np.float32)  # Escala Gamma (0.5 h convertida a días)
         sim.hubs_kappa = np.array([0.0, 2.0], dtype=np.float32)
         sim.hubs_ell = np.array([0.0, 8.0], dtype=np.float32)
         sim.hubs_rho = np.array([0.8, 1.0], dtype=np.float32)

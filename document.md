@@ -375,6 +375,195 @@ donde ε > 0 representa la siembra viral inicial. El resto de la población mant
 
 ---
 
+## Parte VIII: Extensiones Estructurales y Experimentos Canónicos
+
+Esta sección formaliza dos ejes de extensión del modelo base: la introducción de **movilidad estructurada** (puntos de atracción y multiparche) y el **análisis de intervenciones de política sanitaria** (cuarentena con falla asintomática, distancia social). Cada extensión se define en términos del modelo existente, explicita qué parámetros modifica y propone el experimento canónico que la valida.
+
+---
+
+### VIII.A — Movilidad Estructurada
+
+#### VIII.A.1 Puntos de Atracción Central (Hubs) — Enfoque Continuo
+
+El modelo de movimiento browniano isotrópico de la Parte IV §4 captura difusión residencial pero no la estructura de la movilidad humana real, que combina dos fenómenos cualitativamente distintos: visitas sistemáticas con agenda propia (escuela, trabajo, supermercado) y atracción gravitatoria pasiva hacia nodos densos de la ciudad (centro histórico, plaza principal). Estos dos mecanismos coexisten y requieren operadores separados.
+
+**Taxonomía de hubs.** Se introduce un conjunto de $H$ hubs fijos $\{\mathbf{c}_h\}_{h=1}^H$, cada uno caracterizado por dos parámetros independientes:
+
+- $\lambda_{i,h} \geq 0$: tasa de visita agendada del agente $i$ al hub $h$ (visitas por unidad de tiempo). Cero si el agente no tiene agenda en ese hub.
+- $\kappa_h \geq 0$: masa gravitatoria del hub, que controla la intensidad de la atracción pasiva sobre todos los agentes en el dominio.
+
+Esto produce tres arquetipos naturales:
+
+| Tipo | $\lambda_{i,h}$ | $\kappa_h$ | Ejemplo |
+|---|---|---|---|
+| Agenda pura | Alto | 0 | Escuela, trabajo |
+| Gravitatorio puro | 0 | Alto | Centro histórico, plaza |
+| Mixto | Moderado | Moderado | Supermercado |
+
+---
+
+**Operador 1 — Agenda de visitas (Poisson).** Los tiempos entre visitas sucesivas al hub $h$ para el agente $i$ siguen:
+
+$$T_{i,h}^{(k)} \sim \text{Exp}(\lambda_{i,h})$$
+
+La duración de cada estadía se extrae de:
+
+$$\Delta_{i,h} \sim \text{Gamma}(\alpha_h, \beta_h)$$
+
+con $\alpha_h, \beta_h$ calibrados por tipo de hub ($\alpha_h \approx 1$ para visitas cortas variables como un kiosco; $\alpha_h \gg 1$ para jornadas de duración concentrada como una escuela). Durante la estadía, el operador de Langevin se suspende completamente y la posición se fija:
+
+$$\mathbf{x}_i(t) = \mathbf{c}_h \qquad t \in \bigl[T_{i,h}^{(k)},\; T_{i,h}^{(k)} + \Delta_{i,h}\bigr]$$
+
+Al finalizar la visita, el agente retoma la SDE desde $\mathbf{c}_h$. El cierre de un hub de agenda se implementa anulando la tasa: $\lambda_{i,h} \to 0\;\forall i$.
+
+---
+
+**Operador 2 — Atracción gravitatoria (deriva continua).** Fuera de cualquier visita agendada activa, la SDE espacial incorpora una deriva determinista hacia los hubs gravitatorios:
+
+$$d\mathbf{x}_i(t) = \underbrace{\sum_{h=1}^H \kappa_h \cdot g\!\left(\mathbf{x}_i(t), \mathbf{c}_h\right) dt}_{\text{deriva gravitatoria}} + \underbrace{\sqrt{2\,D_{esp}(V_i(t))}\;\circ\;d\mathbf{W}_i^{esp}(t)}_{\text{difusión browniana}}$$
+
+El kernel gravitatorio es gaussiano suavizado para evitar singularidades en $\mathbf{x}_i \approx \mathbf{c}_h$:
+
+$$g(\mathbf{x}_i, \mathbf{c}_h) = \frac{\mathbf{c}_h - \mathbf{x}_i}{|\mathbf{c}_h - \mathbf{x}_i| + \epsilon} \cdot \exp\!\left(-\frac{|\mathbf{c}_h - \mathbf{x}_i|^2}{2\ell_h^2}\right)$$
+
+donde $\ell_h$ es el radio de influencia del hub (más allá de $3\ell_h$ la atracción es despreciable) y $\epsilon$ es un regularizador numérico pequeño. Un hub gravitatorio no fija la posición del agente: el agente es atraído pero sigue difundiendo, modelando el comportamiento de quien deambula por una zona céntrica sin destino fijo.
+
+**Precedencia de operadores.** Cuando el agente $i$ está en visita agendada activa a algún hub, el operador gravitatorio se inhibe — la posición está fijada y no hay SDE activa. La agenda tiene precedencia sobre la gravedad.
+
+---
+
+**Mecanismo de supercontagio.** En ambos operadores, la emisión de inóculo opera normalmente durante la presencia en el hub. La concentración de agentes en $\mathbf{c}_h$ — ya sea por agenda simultánea o por atracción gravitatoria — eleva transitoriamente el campo ambiental local $D_j(t)$ (Parte IV §1–2) muy por encima del nivel de fondo. Un infectado en hub de agenda emite en posición fija durante $\Delta_{i,h}$, maximizando la dosis acumulada por los co-presentes. Un infectado gravitatorio emite mientras deambula en el entorno del hub, con efecto algo más difuso pero sostenido en el tiempo. Ambos producen eventos de supercontagio que el browniano isotrópico no puede reproducir.
+
+**Ajuste de emisión por tipo de hub.** Para reflejar ventilación, densidad y tiempo de exposición propios de cada espacio, la emisión del agente $i$ en hub $h$ se escala:
+
+$$V_i^{hub}(t) = \rho_h \cdot V_i(t) \qquad \rho_h \in (0, 1]$$
+
+con $\rho_h$ calibrable por arquetipo (escuela cerrada $\rho_h \approx 0.8$, plaza abierta $\rho_h \approx 0.3$).
+
+---
+
+**Experimento canónico 1 — Higiene vs. cierre de hubs.** Se comparan dos intervenciones activadas en $t = t^*$ (umbral de casos):
+
+| Intervención | Parámetro modificado | Interpretación |
+|---|---|---|
+| Higiene poblacional | $V_{50,basal} \to \alpha_{hig} \cdot V_{50,basal},\; \alpha_{hig} > 1$ | Barrera innata global elevada |
+| Cierre de hubs de agenda | $\lambda_{i,h} \to 0\;\forall i, h$ | Eliminación de visitas sistemáticas |
+| Cierre de hubs gravitatorios | $\kappa_h \to 0\;\forall h$ | Eliminación de zonas de atracción pasiva |
+
+La hipótesis es que el cierre de hubs de agenda reduce $R_{ef}$ de forma más abrupta que la higiene, al eliminar los eventos de supercontagio de alta densidad y duración fija. El cierre gravitatorio tiene efecto más gradual — los agentes siguen difundiendo en la zona pero sin sesgo — y puede ser menos efectivo si la concentración residual sigue siendo alta. La comparación tiene una asimetría temporal relevante: la higiene es activable instantáneamente a nivel individual, mientras que el cierre de hubs requiere decisión institucional con demora $\delta t_{inst}$ modelable como parámetro adicional.
+
+---
+
+#### VIII.A.2 Modelo Multiparche con Probabilidad de Viaje
+
+El modelo base opera en una única región espacial de tamaño $L \times L$. Para representar dinámicas interpoblacionales (ciudades, barrios, países) se extiende a $P$ parches $\{p\}_{p=1}^P$, cada uno con su propia grilla o espacio continuo y población $N_p$.
+
+**Operador de migración.** En cada paso de tiempo, cada agente $i$ en parche $p$ puede migrar al parche $q \neq p$ con probabilidad:
+
+$$m_{pq}(t) = m_{pq}^0 \cdot \Pi(t)$$
+
+donde $m_{pq}^0$ es la tasa de movilidad basal (estimable de matrices de origen-destino de transporte) y $\Pi(t) \in [0,1]$ es un factor de reducción de movilidad global activable en respuesta a la situación epidémica:
+
+$$\Pi(t) = \begin{cases} 1 & \text{si } I_{total}(t) < I^* \\ \pi_{min} & \text{si } I_{total}(t) \geq I^* \end{cases}$$
+
+con $I^*$ el umbral de casos que activa la restricción de movimiento y $\pi_{min} \in [0,1]$ la movilidad residual permitida (nunca cero: hay movilidad esencial).
+
+Al migrar, el agente conserva su vector de estado completo $\mathbf{X}_i$ (compartimento, carga viral, AUC, Ωᵢ). El parche destino hereda el agente con su biología intacta.
+
+**Mecanismo de acoplamiento.** Sin migración ($m_{pq}^0 = 0$), los parches evolucionan como epidemias independientes. La migración introduce acoplamiento: un parche con $I_p \ll 1$ puede recibir un agente infectado y encender una epidemia secundaria. La dinámica de parche $p$ en el enfoque continuo extiende el campo ambiental $D_j(t)$ al dominio espacial local de ese parche — los migrantes emiten inóculo en el nuevo espacio desde el momento de llegada.
+
+**Experimento canónico 2 — Supervivencia diferencial de parches.** Se simulan $P = 5$ parches heterogéneos en densidad poblacional $N_p$, con un único parche semilla $p^*$ infectado en $t = 0$. Se registran:
+
+- El tiempo de llegada de la epidemia a cada parche $T_{arr,p}$ (primera infección local).
+- La fracción de parches que escapan la ola principal $\{p : I_p^{peak} < \varepsilon\}$ para $\varepsilon$ pequeño.
+- El efecto de activar $\Pi(t)$ en $t^*$ sobre ambas métricas.
+
+La hipótesis es que parches periféricos con $m_{p^*,p}^0$ bajo y activación temprana de $\Pi(t)$ tienen probabilidad no despreciable de escapar la epidemia — un resultado sensible al timing: la misma restricción de movilidad aplicada $\Delta t$ más tarde puede ser ineficaz si el parche ya recibió el caso índice.
+
+---
+
+### VIII.B — Intervenciones de Política Sanitaria
+
+#### VIII.B.1 Cuarentena con Falla por Asintomaticidad
+
+El compartimento E (expuesto) del modelo actual es epidemiológicamente silente: el agente es indetectable. La intervención de aislamiento actúa sobre agentes en estado I, pero la fracción asintomática de infectados también permanece indetectable durante parte de su curso clínico. Esta sección formaliza el mecanismo de cuarentena con falla estocástica.
+
+**Definición de asintomaticidad.** Un agente $i$ en estado I es asintomático en el tiempo $t$ si su carga viral está por debajo de un umbral perceptible:
+
+$$A_i(t) = \mathbb{1}[v_i(t) < v_{sint}]$$
+
+donde $v_{sint}$ es el mismo umbral de inhibición motora de la Parte IV §4. Esta elección es deliberada: un agente cuya carga viral no alcanza para inhibir su movimiento tampoco presenta síntomas detectables, unificando los umbrales de detección clínica y efecto cinemático.
+
+**Operador de cuarentena.** En $t \geq t^*$, se evalúa en cada paso para cada agente en estado I:
+
+$$Q_i(t) = \begin{cases} 1 \quad \text{(cuarentena)} & \text{con probabilidad } (1 - A_i(t)) \cdot p_Q \\ 0 \quad \text{(libre)} & \text{en caso contrario} \end{cases}$$
+
+donde $p_Q \in [0,1]$ es la eficacia del sistema de detección y aislamiento para casos sintomáticos. Los agentes con $Q_i = 1$ son excluidos de la vecindad de Hill (discreto) o fijados en posición aislada $\mathbf{x}^Q$ con emisión de inóculo bloqueada (continuo).
+
+La falla del sistema tiene dos fuentes independientes:
+
+1. **Falla por asintomaticidad:** $A_i(t) = 1$ — el agente no puede ser detectado.
+2. **Falla del sistema:** $1 - p_Q$ — el sistema no captura al caso sintomático (capacidad limitada de trazado, demora en resultados, rechazo voluntario).
+
+**Experimento canónico 3 — Velocidad de erradicación vs. fracción asintomática.** Se barre $v_{sint} \in [0.1, 0.9]$ (variando la definición de asintomaticidad) manteniendo $p_Q = 1$ para aislar el efecto. El resultado esperado es una curva de $T_{erad}$ (tiempo hasta $I_{total} = 0$) no monotónica en $v_{sint}$: un umbral de detección demasiado alto clasifica a muchos infectados como asintomáticos y falla; demasiado bajo genera cuarentenas excesivas con costo logístico. El punto de operación óptimo minimiza la integral $\int_0^{T_{erad}} I(t)\,dt$ sujeto a $\int_0^{T_{erad}} Q(t)\,dt \leq Q_{max}$ (capacidad de cuarentena).
+
+---
+
+#### VIII.B.2 Distancia Social como Parámetro de Intervención
+
+La distancia social no es un compartimento sino una modificación de los parámetros de interacción existentes. Su efecto opera en mecanismos distintos según el enfoque:
+
+**Enfoque discreto.** La distancia social eleva el umbral de Hill receptor de la totalidad de la población no-infectada:
+
+$$V_{50}^{DS}(\omega_{in,i}) = V_{50}(\omega_{in,i}) \cdot (1 + \eta \cdot c_{DS})$$
+
+donde $c_{DS} \in [0,1]$ es el nivel de cumplimiento de la medida (1 = cumplimiento total) y $\eta > 0$ es la eficacia biológica de la intervención. Esta formulación es consistente con la parametrización de higiene del experimento canónico 1, siendo la diferencia que $\eta \cdot c_{DS}$ puede estimarse de datos observacionales de contacto (encuestas, Bluetooth proximity, etc.).
+
+**Enfoque continuo.** La distancia social reduce la difusividad basal de agentes sanos, contrayendo el radio de encuentro:
+
+$$D_{basal}^{DS} = D_{basal} \cdot (1 - c_{DS} \cdot \eta_{mov})$$
+
+con $\eta_{mov} \in (0, 1)$ para garantizar $D_{basal}^{DS} > 0$. La reducción de difusividad comprime la distribución de distancias inter-agente, reduciendo la integral del kernel gaussiano $K(r)$ en el campo de dosis.
+
+**Cumplimiento parcial y heterogeneidad.** El caso de interés no es $c_{DS} = 1$ (trivial: la epidemia colapsa rápidamente) sino $c_{DS} < 1$ con fracción $1 - c_{DS}$ de la población no cumplidora. Para implementarlo correctamente, $c_{DS}$ se asigna a nivel individual:
+
+$$c_{DS,i} \sim \text{Bernoulli}(C_{DS}) \qquad C_{DS} \in [0,1]$$
+
+donde $C_{DS}$ es el nivel de cumplimiento poblacional. Los agentes con $c_{DS,i} = 0$ no modifican su comportamiento.
+
+**Experimento canónico 4 — Umbral de cumplimiento y efecto de los hubs.** Se barre $C_{DS} \in [0, 1]$ en pasos de $0.05$ registrando el pico de prevalencia $I^{peak}$ y el total de muertos $D_{final}$. Se ejecuta la simulación en dos configuraciones: **sin hubs** y **con hubs activos**.
+
+La pregunta experimental es: **¿los hubs anulan el efecto de la distancia social?** La hipótesis es que los hubs actúan como cortocircuito del mecanismo de distancia social: agentes que se repelen en espacio abierto convergen forzosamente en el hub, restaurando las condiciones de alta densidad de contacto. El experimento cuantifica el umbral de $C_{DS}$ necesario para que la distancia social sea efectiva *en presencia* de hubs, esperando que este umbral sea significativamente mayor que en su ausencia.
+
+---
+
+### VIII.C — Número Reproductivo Efectivo como Métrica de Intervención
+
+El R₀ de la Parte V §1 es una estimación de fase exponencial. Para monitorear el efecto de las intervenciones en tiempo real se requiere el **número reproductivo efectivo** $R_{ef}(t)$, que es el promedio de contagios secundarios generados por un infectado en el estado actual de la población.
+
+**Estimador de generación.** Para cada agente $i$ en estado I al tiempo $t$, se registra:
+
+- $c_i^{hist}(t)$: número de agentes que $i$ ha infectado confirmadamente hasta $t$.
+- $\hat{c}_i^{fut}(t)$: proyección de contagios futuros estimada por la fracción de vida infecciosa restante:
+
+$$\hat{c}_i^{fut}(t) = c_i^{hist}(t) \cdot \frac{P(\tau_i > t)}{P(\tau_i \leq t)}$$
+
+donde la distribución de $\tau_i$ se estima del proceso OU calibrado. El estimador poblacional es:
+
+$$\hat{R}_{ef}(t) = \frac{1}{|I(t)|} \sum_{i \in I(t)} \left(c_i^{hist}(t) + \hat{c}_i^{fut}(t)\right)$$
+
+**Clasificación dinámica de la epidemia:**
+
+| Condición | Régimen |
+|---|---|
+| $\hat{R}_{ef}(t) > 1$ | Epidémico — la incidencia crece |
+| $\hat{R}_{ef}(t) = 1$ | Endémico — incidencia estacionaria |
+| $\hat{R}_{ef}(t) < 1$ | Declive — la epidemia se extingue |
+
+$\hat{R}_{ef}(t)$ es la métrica canónica para evaluar si una intervención (cuarentena, distancia social, cierre de hubs) ha cruzado el umbral de control. Toda intervención de las secciones VIII.A y VIII.B debe reportarse con la trayectoria temporal de $\hat{R}_{ef}(t)$ antes y después de $t^*$ para permitir comparaciones de velocidad de respuesta entre estrategias.
+
+---
+
 ## Apéndice: Tabla de Parámetros
 
 ### Parámetros del Núcleo Biológico (Ambos Enfoques)
@@ -411,3 +600,21 @@ donde ε > 0 representa la siembra viral inicial. El resto de la población mant
 | Umbral de inhibición motora | V_sint | [0.3, 0.7] | Carga viral al 50% de inhibición de D_esp |
 | Exponente de Hill (inhibición motora) | n_mov | [1, 4] | Agudeza de inhibición cinemática |
 | Dosis máxima de infección | τ_max | Variable por virus | Dosis máxima acumulada; τᵢ = ωᵢₙ,ᵢ · τ_max |
+| Número de hubs | H | [1, 20] | VIII.A.1 |
+| Tasa de visita del agente $i$ al hub $h$ | $\lambda_{i,h}$ | [0, 5] visitas/día | VIII.A.1 |
+| Forma de la distribución de estadía en hub $h$ | $\alpha_h$ | [1, 10] | VIII.A.1 |
+| Escala de la distribución de estadía en hub $h$ | $\beta_h$ | [0.1, 2.0] h | VIII.A.1 |
+| Masa gravitatoria del hub $h$ | $\kappa_h$ | [0, 5.0] | VIII.A.1 |
+| Radio de influencia gravitatoria del hub $h$ | $\ell_h$ | [0.05L, 0.3L] | VIII.A.1 |
+| Factor de emisión de inóculo en hub $h$ | $\rho_h$ | [0.1, 1.0] | VIII.A.1 |
+| Factor de amplificación de higiene | $\alpha_{hig}$ | [1.5, 5.0] | VIII.A.1 |
+| Número de parches | P | [2, 20] | VIII.A.2 |
+| Tasa de migración basal entre parches | $m_{pq}^0$ | [0, 0.05] diaria | VIII.A.2 |
+| Umbral de casos para restricción de viaje | $I^*$ | Variable | VIII.A.2 |
+| Movilidad residual bajo restricción | $\pi_{min}$ | [0.05, 0.3] | VIII.A.2 |
+| Umbral de detección sintomática | $v_{sint}$ | [0.1, 0.9] | VIII.B.1 |
+| Eficacia del sistema de cuarentena | $p_Q$ | [0, 1] | VIII.B.1 |
+| Capacidad máxima de cuarentena | $Q_{max}$ | Variable | VIII.B.1 |
+| Eficacia biológica de distancia social (discreto) | $\eta$ | [0.5, 3.0] | VIII.B.2 |
+| Eficacia cinemática de distancia social (continuo) | $\eta_{mov}$ | [0.1, 0.9] | VIII.B.2 |
+| Nivel de cumplimiento poblacional | $C_{DS}$ | [0, 1] | VIII.B.2 |
