@@ -71,7 +71,7 @@ def main():
             y=ay_t0,
             mode="markers",
             marker=dict(
-                color=["rgba(255, 127, 14, " + str(min(0.5, op * 0.35)) + ")" for op in ad_t0],
+                color=["rgba(238, 130, 238, " + str(min(0.5, op * 0.35)) + ")" for op in ad_t0],
                 size=3
             ),
             name="Aerosol Viral (Gas)",
@@ -158,7 +158,7 @@ def main():
                 x=ax_t,
                 y=ay_t,
                 marker=dict(
-                    color=["rgba(255, 127, 14, " + str(min(0.5, op * 0.35)) + ")" for op in ad_t],
+                    color=["rgba(238, 130, 238, " + str(min(0.5, op * 0.35)) + ")" for op in ad_t],
                     size=3
                 )
             ),

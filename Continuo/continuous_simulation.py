@@ -190,9 +190,27 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             h_work = S + (idx_pos % W)
             self.hub_group_id[idx, h_work] = (idx_pos // W) // 12  # office size of 12
 
-        # ponytail: initialize household allocations and coordinates
+        # ponytail: initialize household allocations and coordinates, avoiding hub positions
         H_hogar = int(np.ceil(self.N / self.N_hogar))
-        unique_home_coords = np.random.uniform(0.0, self.L, (H_hogar, 2)).astype(np.float32)
+        
+        unique_home_coords = []
+        for _ in range(H_hogar):
+            while True:
+                pos = np.random.uniform(0.0, self.L, 2).astype(np.float32)
+                if self.H > 0:
+                    dists = np.linalg.norm(self.hubs_coords - pos, axis=1)
+                    is_too_close = False
+                    for h in range(self.H):
+                        min_dist = 5.5 if "Centro" in hubs_names[h] else 3.5
+                        if dists[h] < min_dist:
+                            is_too_close = True
+                            break
+                    if is_too_close:
+                        continue
+                unique_home_coords.append(pos)
+                break
+        unique_home_coords = np.array(unique_home_coords, dtype=np.float32)
+        
         self.household_id = (np.arange(self.N, dtype=np.int32) % H_hogar)
         np.random.shuffle(self.household_id)
         self.home_coords = unique_home_coords[self.household_id]
