@@ -20,8 +20,12 @@ def main():
     df_dinamico = df_dinamico.sort(["tiempo", "id_agente"])
     
     N = df_dinamico.filter(pl.col("tiempo") == 0).height
-    tiempos = df_dinamico["tiempo"].unique(maintain_order=True).to_numpy()
-    tiempos = np.sort(tiempos)
+    tiempos_all = df_dinamico["tiempo"].unique(maintain_order=True).to_numpy()
+    tiempos_all = np.sort(tiempos_all)
+    
+    # ponytail: Subsample time steps to prevent browser memory exhaustion (capping at ~200 frames)
+    step_modulo = max(1, len(tiempos_all) // 200)
+    tiempos = tiempos_all[::step_modulo]
     T_max = len(tiempos)
     
     L = float(max(df_dinamico["coord_x"].max(), df_dinamico["coord_y"].max()))

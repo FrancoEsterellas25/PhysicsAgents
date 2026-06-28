@@ -20,12 +20,18 @@ def main():
     # Join coordinates and ensure strict ordering by time, then agent ID
     df_joined = df_dinamico.join(df_estatico.select(["id_agente", "coord_x", "coord_y"]), on="id_agente")
     df_joined = df_joined.sort(["tiempo", "id_agente"])
-    df_pd = df_joined.to_pandas()
+    df_pd_all = df_joined.to_pandas()
 
     N = len(df_estatico)
-    tiempos = df_dinamico["tiempo"].unique(maintain_order=True).to_numpy()
-    tiempos = np.sort(tiempos)
+    tiempos_all = df_dinamico["tiempo"].unique(maintain_order=True).to_numpy()
+    tiempos_all = np.sort(tiempos_all)
+    
+    # ponytail: Subsample time steps to prevent browser memory exhaustion (capping at ~200 frames)
+    step_modulo = max(1, len(tiempos_all) // 200)
+    tiempos = tiempos_all[::step_modulo]
     T_max = len(tiempos)
+    
+    df_pd = df_pd_all[df_pd_all["tiempo"].isin(tiempos)]
     
     max_x = int(df_pd["coord_x"].max())
     max_y = int(df_pd["coord_y"].max())
