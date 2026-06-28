@@ -77,7 +77,8 @@ def main():
             opacity=0.45,
             hoverinfo="skip",
             zmin=0.0,
-            zmax=2.0
+            zmax=2.0,
+            zsmooth="best"
         ),
         row=1, col=1
     )
@@ -155,7 +156,7 @@ def main():
         grid_t = np.array(grid_t_flat, dtype=np.float32).reshape((GRID_RES, GRID_RES))
         
         frame_data = [
-            go.Heatmap(z=grid_t),
+            go.Heatmap(z=grid_t, zsmooth="best"),
             # Agent coordinates (Trace 7)
             go.Scatter(
                 x=df_t["coord_x"].to_numpy(),
