@@ -225,7 +225,9 @@ def main():
             else:
                 color_val = "White"
                 
-            if htipo == "agenda" and "Centro" not in name:
+            ambiente = row.get("ambiente", "cerrado")
+            
+            if ambiente == "cerrado":
                 fig.add_shape(
                     type="rect",
                     xref="x1", yref="y1",

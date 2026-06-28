@@ -72,7 +72,8 @@ class EscenaEpidemiologicaContinuo(Scene):
                 color = color_map.get(color_str.lower(), WHITE)
                 pos = mapear_posicion(hx, hy)
                 
-                if htipo == "agenda" and "Centro" not in name:
+                ambiente = row.get("ambiente", "cerrado")
+                if ambiente == "cerrado":
                     hub_mob = Square(side_length=0.4, color=color, fill_opacity=0.3, stroke_width=2, stroke_color=color)
                     hub_mob.move_to(pos)
                     label = Text(name, font_size=10, color=color).next_to(hub_mob, UP, buff=0.05)

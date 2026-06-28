@@ -93,7 +93,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.hubs_kappa = np.zeros(self.H, dtype=np.float32)
         self.hubs_ell = np.zeros(self.H, dtype=np.float32)
         self.hubs_rho = np.zeros(self.H, dtype=np.float32)
-        self.hubs_is_closed = np.zeros(self.H, dtype=bool)
+        self.hubs_is_closed_group = np.zeros(self.H, dtype=bool)
+        self.hubs_is_closed_space = np.zeros(self.H, dtype=bool)
         hubs_names = []
         hubs_colors = []
         
@@ -110,7 +111,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.hubs_kappa[h] = 0.0
             self.hubs_ell[h] = 0.0
             self.hubs_rho[h] = 0.8
-            self.hubs_is_closed[h] = True
+            self.hubs_is_closed_group[h] = True
+            self.hubs_is_closed_space[h] = True
             hubs_names.append(f"Escuela {h+1}" if S > 1 else "Escuela")
             hubs_colors.append("Yellow")
             
@@ -123,7 +125,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.hubs_kappa[h] = 0.0
             self.hubs_ell[h] = 0.0
             self.hubs_rho[h] = 0.7
-            self.hubs_is_closed[h] = True
+            self.hubs_is_closed_group[h] = True
+            self.hubs_is_closed_space[h] = True
             hubs_names.append(f"Trabajo {h-S+1}" if W > 1 else "Trabajo")
             hubs_colors.append("Orange")
             
@@ -136,7 +139,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.hubs_kappa[h] = 0.0
             self.hubs_ell[h] = 0.0
             self.hubs_rho[h] = 0.9
-            self.hubs_is_closed[h] = False
+            self.hubs_is_closed_group[h] = False
+            self.hubs_is_closed_space[h] = True  # Supermarket is closed/indoor space!
             hubs_names.append(f"Supermercado {h-S-W+1}" if M > 1 else "Supermercado")
             hubs_colors.append("Cyan")
             
@@ -150,9 +154,15 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.hubs_kappa[h_centro] = 0.0
         self.hubs_ell[h_centro] = 0.0
         self.hubs_rho[h_centro] = 1.0
-        self.hubs_is_closed[h_centro] = False
+        self.hubs_is_closed_group[h_centro] = False
+        self.hubs_is_closed_space[h_centro] = False       # Centro is open/outdoor space!
         hubs_names.append("El Centro")
         hubs_colors.append("Green")
+        
+        # Build environments list for parquet export
+        hubs_ambientes = []
+        for h in range(self.H):
+            hubs_ambientes.append("cerrado" if self.hubs_is_closed_space[h] else "abierto")
         
         # Distribute agenda hubs coordinates in the ring
         for h in range(S + W + M):
@@ -205,14 +215,15 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
         print(f"Exportado {base_dir / 'mapa_estatico.parquet'} (Continuo)")
         
-        # ponytail: export hubs.parquet if hubs exist (with name and color properties)
+        # ponytail: export hubs.parquet if hubs exist (with name, color, and environment properties)
         if self.H > 0:
             df_hubs = pl.DataFrame({
                 "x": self.hubs_coords[:, 0],
                 "y": self.hubs_coords[:, 1],
                 "tipo": self.hubs_types,
                 "nombre": hubs_names,
-                "color": hubs_colors
+                "color": hubs_colors,
+                "ambiente": hubs_ambientes
             })
             df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
             print(f"Exportado {base_dir / 'hubs.parquet'}")
