@@ -40,7 +40,7 @@ W2 = 0.7                 # Peso del tiempo crónico de enfermedad
 CALIDAD = 'l'            # Calidades: 'l' (Low), 'm' (Medium), 'h' (High)
 ABRIR_VIDEO_AL_TERMINAR = True
 VELOCIDAD_REPRODUCCION = 50.0 # Pasos dt por segundo (velocidad de los frames)
-RENDERIZAR_MANIM = True  # ponytail: set to False to skip slow Manim video render and only generate Plotly HTML
+RENDERIZAR_MANIM = False  # ponytail: set to False to skip slow Manim video render and only generate Plotly HTML
 
 # 5. PARÁMETROS DE LAS EXTENSIONES (PARTE VIII)
 HUBS_ACTIVOS = True

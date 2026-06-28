@@ -41,7 +41,7 @@ W2 = 0.4                 # Peso del tiempo crónico de enfermedad en el estrés
 # 'h' (High - 1080p) -> Alta calidad HD
 CALIDAD = 'l'            
 ABRIR_VIDEO_AL_TERMINAR = True
-RENDERIZAR_MANIM = True  # ponytail: set to False to skip slow Manim video render and only generate Plotly HTML
+RENDERIZAR_MANIM = False  # ponytail: set to False to skip slow Manim video render and only generate Plotly HTML
 
 # 5. PARÁMETROS DE LAS EXTENSIONES (PARTE VIII)
 T_TRIGGER_INTERVENCION = 10.0  # Día en que se activan cuarentenas/distanciamiento
