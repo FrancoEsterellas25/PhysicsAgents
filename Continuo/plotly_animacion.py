@@ -222,7 +222,7 @@ def main():
             {
                 "buttons": [
                     {
-                        "args": [None, {"frame": {"duration": 50, "redraw": True}, "fromcurrent": True, "transition": {"duration": 0}}],
+                        "args": [None, {"frame": {"duration": 200, "redraw": True}, "fromcurrent": True, "transition": {"duration": 0}}],
                         "label": "Play",
                         "method": "animate"
                     },

@@ -426,6 +426,9 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             )
         )
         
+        # Deceased agents remain completely still (diffusion is zero)
+        D_esp[self.state == self.D] = 0.0
+        
         # Gravitational Drift (only applies to transit agents)
         drift_x = np.zeros(self.N, dtype=np.float32)
         drift_y = np.zeros(self.N, dtype=np.float32)
