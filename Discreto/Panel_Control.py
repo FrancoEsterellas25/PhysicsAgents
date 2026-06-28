@@ -42,6 +42,13 @@ W2 = 0.4                 # Peso del tiempo crónico de enfermedad en el estrés
 CALIDAD = 'l'            
 ABRIR_VIDEO_AL_TERMINAR = True
 
+# 5. PARÁMETROS DE LAS EXTENSIONES (PARTE VIII)
+T_TRIGGER_INTERVENCION = 10.0  # Día en que se activan cuarentenas/distanciamiento
+EFICACIA_CUARENTENA_PQ = 0.8  # Eficacia del sistema de detección y aislamiento
+UMBRAL_SINTOMAS_VSINT = 0.5   # Umbral sintomático (v_sint)
+CUMPLIMIENTO_DISTANCIA_C_DS = 0.6 # Cumplimiento de distancia social
+EFICACIA_DISTANCIA_ETA = 1.5   # Eficacia biológica de distancia social (eta)
+
 # =====================================================================
 # MOTOR DE EJECUCIÓN (NO TOCAR SI NO SABES LO QUE HACES)
 # =====================================================================
@@ -70,6 +77,13 @@ def main():
     sim.lam = LAMBDA_LETALIDAD
     sim.w1 = W1
     sim.w2 = W2
+    
+    # ponytail: configure clinical interventions (Part VIII)
+    sim.t_trigger = T_TRIGGER_INTERVENCION
+    sim.p_Q = EFICACIA_CUARENTENA_PQ
+    sim.v_sint = UMBRAL_SINTOMAS_VSINT
+    sim.C_DS = CUMPLIMIENTO_DISTANCIA_C_DS
+    sim.eta = EFICACIA_DISTANCIA_ETA
     
     print(f"Topología Geográfica: {TOPOLOGIA.capitalize()}")
     print(f"Resolviendo espacio: {GRID_ROWS}x{GRID_COLS} ({GRID_ROWS*GRID_COLS} agentes)...")

@@ -40,6 +40,14 @@ W2 = 0.7                 # Peso del tiempo crónico de enfermedad
 CALIDAD = 'l'            # Calidades: 'l' (Low), 'm' (Medium), 'h' (High)
 ABRIR_VIDEO_AL_TERMINAR = True
 
+# 5. PARÁMETROS DE LAS EXTENSIONES (PARTE VIII)
+HUBS_ACTIVOS = True
+T_TRIGGER_INTERVENCION = 10.0  # Día en que se activan cuarentenas/distanciamiento
+EFICACIA_CUARENTENA_PQ = 0.8  # Eficacia del sistema de detección y aislamiento
+UMBRAL_SINTOMAS_VSINT = 0.5   # Umbral sintomático (v_sint)
+CUMPLIMIENTO_DISTANCIA_C_DS = 0.6 # Cumplimiento poblacional de distancia social (C_DS)
+EFICACIA_DISTANCIA_ETA_MOV = 0.5 # Eficacia cinemática de la distancia social (eta_mov)
+
 # =====================================================================
 # MOTOR DE EJECUCIÓN (NO TOCAR SI NO SABES LO QUE HACES)
 # =====================================================================
@@ -74,6 +82,28 @@ def main():
     sim.lam = LAMBDA_LETALIDAD
     sim.w1 = W1
     sim.w2 = W2
+    
+    # ponytail: configure hubs and clinical interventions (Part VIII)
+    if HUBS_ACTIVOS:
+        sim.H = 2
+        import numpy as np
+        sim.hubs_coords = np.array([
+            [25.0, 25.0],  # Hub 1 (Escuela - Agenda)
+            [10.0, 10.0]   # Hub 2 (Plaza - Gravitatorio)
+        ], dtype=np.float32)
+        sim.hubs_types = ["agenda", "gravitatorio"]
+        sim.hubs_lambda = np.array([1.5, 0.0], dtype=np.float32)  # Visitas por día
+        sim.hubs_alpha = np.array([5.0, 0.0], dtype=np.float32)
+        sim.hubs_beta = np.array([0.05, 0.0], dtype=np.float32)
+        sim.hubs_kappa = np.array([0.0, 2.0], dtype=np.float32)
+        sim.hubs_ell = np.array([0.0, 8.0], dtype=np.float32)
+        sim.hubs_rho = np.array([0.8, 1.0], dtype=np.float32)
+        
+    sim.t_trigger = T_TRIGGER_INTERVENCION
+    sim.p_Q = EFICACIA_CUARENTENA_PQ
+    sim.v_sint = UMBRAL_SINTOMAS_VSINT
+    sim.C_DS = CUMPLIMIENTO_DISTANCIA_C_DS
+    sim.eta_mov = EFICACIA_DISTANCIA_ETA_MOV
     
     print(f"Dimensión del espacio continuo: {L_ESPACIO}x{L_ESPACIO}")
     print(f"Población: {N_AGENTES} agentes (Siembra inicial: {AGENTES_INFECTADOS_INICIALES})...")
