@@ -297,7 +297,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                     if self.hubs_types[h] == 'agenda' and self.hubs_lambda[h] > 0:
                         # Only allow visit if open hub OR if the agent has a group assigned in this closed hub
                         can_visit = np.ones(self.N, dtype=bool)
-                        if self.hubs_is_closed[h]:
+                        if self.hubs_is_closed_group[h]:
                             can_visit = (self.hub_group_id[:, h] != -1)
                         
                         prob_start = 1.0 - np.exp(-self.hubs_lambda[h] * self.dt)
@@ -352,7 +352,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                 h_j = visiting_hub_idx[j_idx]
                 same_hub = both_in_hub & (h_i == h_j)
                 if np.any(same_hub):
-                    is_closed_hub = self.hubs_is_closed[h_i]
+                    is_closed_hub = self.hubs_is_closed_group[h_i]
                     closed_same_hub = same_hub & is_closed_hub
                     if np.any(closed_same_hub):
                         group_i = self.hub_group_id[i_idx, h_i]
@@ -475,7 +475,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                 h_j_p = visiting_hub_idx[j_idx_p]
                 same_hub_p = both_in_hub_p & (h_i_p == h_j_p)
                 if np.any(same_hub_p):
-                    is_closed_hub_p = self.hubs_is_closed[h_i_p]
+                    is_closed_hub_p = self.hubs_is_closed_group[h_i_p]
                     closed_same_hub_p = same_hub_p & is_closed_hub_p
                     if np.any(closed_same_hub_p):
                         group_i_p = self.hub_group_id[i_idx_p, h_i_p]
@@ -501,8 +501,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         mask_hub_active = (self.motion_state == 2)
         if np.any(mask_hub_active) and self.H > 0:
             h_indices = visiting_hub_idx[mask_hub_active]
-            is_closed_h = self.hubs_is_closed[h_indices]
-            # Closed hubs get delta_cerrado, open hubs get delta_abierto
+            is_closed_h = self.hubs_is_closed_space[h_indices]
+            # Closed space hubs get delta_cerrado, open space hubs get delta_abierto
             delta_agents[mask_hub_active] = np.where(is_closed_h, self.delta_cerrado, self.delta_abierto)
             
         self.dosis = self.dosis * np.exp(-delta_agents * self.dt) + 0.5 * (R_t + R_pred) * self.dt
