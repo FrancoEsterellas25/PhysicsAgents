@@ -62,7 +62,7 @@ def main():
     
     # Trace 0: Environmental Virus Density Heatmap (dynamic background)
     GRID_RES = 40
-    grid_t0_flat = df_virus.filter(pl.col("tiempo") == 0)["virus_grid"].to_list()[0]
+    grid_t0_flat = df_virus["virus_grid"][0]
     grid_t0 = np.array(grid_t0_flat, dtype=np.float32).reshape((GRID_RES, GRID_RES))
     x_grid = np.linspace(0, L, GRID_RES)
     y_grid = np.linspace(0, L, GRID_RES)
@@ -149,8 +149,9 @@ def main():
         df_t = df_dinamico.filter(pl.col("tiempo") == t_val)
         colores_t = [COLOR_MAP[st] for st in df_t["estado"].to_numpy()]
         
-        # Load virus grid for this frame
-        grid_t_flat = df_virus.filter(pl.col("tiempo") == t_val)["virus_grid"].to_list()[0]
+        # Load virus grid for this frame via integer index to avoid float precision mismatch
+        grid_idx = min(t_idx * step_modulo, len(df_virus) - 1)
+        grid_t_flat = df_virus["virus_grid"][grid_idx]
         grid_t = np.array(grid_t_flat, dtype=np.float32).reshape((GRID_RES, GRID_RES))
         
         frame_data = [
