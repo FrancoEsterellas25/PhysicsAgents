@@ -90,6 +90,11 @@ class BaseSEIRSDSimulation:
         # Generation tracking for R_ef
         self.infected_by = np.full(self.N, -1, dtype=np.int32)
         self.infections_caused = np.zeros(self.N, dtype=np.int32)
+        
+        # ponytail: Part VIII Household parameters
+        self.household_id = np.zeros(self.N, dtype=np.int32)
+        self.rho_hogar = 1.5     # Domestic transmission scaling factor
+        self.home_coords = None  # Position of each home (initialized in Continuous)
 
     def _fase0_inicializacion(self, output_dir=None):
         """Inicializa perfiles inmunes correlacionados y exporta el mapa estático."""
@@ -137,6 +142,7 @@ class BaseSEIRSDSimulation:
 
     def _fase1_ou_y_auc(self, current_time=None):
         """Integración SDE-OU exacta y actualización del AUC para el estado I."""
+        self.current_time = current_time
         self.prev_viral_load = self.viral_load.copy()
         mask_I = (self.state == self.I)
         if not np.any(mask_I):
