@@ -6,8 +6,12 @@ from pathlib import Path
 
 # ponytail: unified agent scatter trace to prevent index-shift teleportation/swapping in Plotly
 
-def main():
-    base_dir = Path(__file__).parent
+def generar_dashboard(base_dir=None):
+    if base_dir is None:
+        base_dir = Path(__file__).parent
+    
+    # Resolve relative paths in base_dir
+    base_dir = Path(base_dir).resolve()
     
     # 1. Load data
     try:
@@ -319,6 +323,9 @@ def main():
     output_file = base_dir / "plotly_animacion.html"
     fig.write_html(output_file, auto_open=False)
     print(f"Interactive dashboard generated successfully at: {output_file}")
+
+def main():
+    generar_dashboard()
 
 if __name__ == "__main__":
     main()

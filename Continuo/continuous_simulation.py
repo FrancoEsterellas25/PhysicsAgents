@@ -66,6 +66,16 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.motion_state = np.zeros(self.N, dtype=np.int8)
         self.remaining_transit_time = np.zeros(self.N, dtype=np.float32)
         self.transit_destination_hub = np.full(self.N, -1, dtype=np.int16)
+        
+        # ponytail: Streamlit customizable options
+        self.hubs_activos = True
+        self.movimiento_libre = False
+        self.enable_quarantine = True
+        self.quarantine_trigger_pct = 0.05
+        
+        self.higiene_factor = 1.0
+        self.barbijo_eficacia = 0.6
+        self.barbijo_cumplimiento = 0.0
 
     def _fase0_inicializacion(self, output_dir=None):
         """Inicializa perfiles inmunes en core y exporta el mapa estático del enfoque continuo."""
@@ -76,16 +86,22 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         np.random.seed(42)
         self.edades = np.random.randint(5, 75, self.N)
         
-        # ponytail: scale hubs dynamically based on population size N
-        n_children = np.sum(self.edades < 18)
-        n_adults = np.sum((self.edades >= 18) & (self.edades <= 65))
-        
-        S = max(1, int(n_children // 70))  # ~70 children per school
-        W = max(1, int(n_adults // 60))    # ~60 adults per work center
-        M = max(1, int(self.N // 400))     # ~400 agents per supermarket
-        
-        self.H = S + W + M + 1  # Schools + Work Centers + Supermarkets + El Centro
-        
+        # ponytail: scale hubs dynamically based on population size N (only if hubs_activos is True)
+        hubs_names = []
+        hubs_colors = []
+        if getattr(self, "hubs_activos", True):
+            n_children = np.sum(self.edades < 18)
+            n_adults = np.sum((self.edades >= 18) & (self.edades <= 65))
+            
+            S = max(1, int(n_children // 70))  # ~70 children per school
+            W = max(1, int(n_adults // 60))    # ~60 adults per work center
+            M = max(1, int(self.N // 400))     # ~400 agents per supermarket
+            
+            self.H = S + W + M + 1  # Schools + Work Centers + Supermarkets + El Centro
+        else:
+            S = W = M = 0
+            self.H = 0
+            
         # Allocate hub config arrays
         self.hubs_coords = np.zeros((self.H, 2), dtype=np.float32)
         self.hubs_types = []
@@ -97,80 +113,79 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.hubs_rho = np.zeros(self.H, dtype=np.float32)
         self.hubs_is_closed_group = np.zeros(self.H, dtype=bool)
         self.hubs_is_closed_space = np.zeros(self.H, dtype=bool)
-        hubs_names = []
-        hubs_colors = []
         
-        # Symmetrical Layout: Ring of agenda hubs + Centro in the middle
-        center_x, center_y = self.L / 2.0, self.L / 2.0
-        R_circle = self.L * 0.35
-        
-        # 1. Schools
-        for h in range(S):
-            self.hubs_types.append("agenda")
-            self.hubs_lambda[h] = 5.0 / 7.0
-            self.hubs_alpha[h] = 12.0
-            self.hubs_beta[h] = 0.5 / 24.0
-            self.hubs_kappa[h] = 0.0
-            self.hubs_ell[h] = 0.0
-            self.hubs_rho[h] = 0.8
-            self.hubs_is_closed_group[h] = True
-            self.hubs_is_closed_space[h] = True
-            hubs_names.append(f"Escuela {h+1}" if S > 1 else "Escuela")
-            hubs_colors.append("Yellow")
+        # Symmetrical Layout: Ring of agenda hubs + Centro in the middle (only if H > 0)
+        if self.H > 0:
+            center_x, center_y = self.L / 2.0, self.L / 2.0
+            R_circle = self.L * 0.35
             
-        # 2. Work Centers
-        for h in range(S, S + W):
+            # 1. Schools
+            for h in range(S):
+                self.hubs_types.append("agenda")
+                self.hubs_lambda[h] = 5.0 / 7.0
+                self.hubs_alpha[h] = 12.0
+                self.hubs_beta[h] = 0.5 / 24.0
+                self.hubs_kappa[h] = 0.0
+                self.hubs_ell[h] = 0.0
+                self.hubs_rho[h] = 0.8
+                self.hubs_is_closed_group[h] = True
+                self.hubs_is_closed_space[h] = True
+                hubs_names.append(f"Escuela {h+1}" if S > 1 else "Escuela")
+                hubs_colors.append("Yellow")
+                
+            # 2. Work Centers
+            for h in range(S, S + W):
+                self.hubs_types.append("agenda")
+                self.hubs_lambda[h] = 5.0 / 7.0
+                self.hubs_alpha[h] = 16.0
+                self.hubs_beta[h] = 0.5 / 24.0
+                self.hubs_kappa[h] = 0.0
+                self.hubs_ell[h] = 0.0
+                self.hubs_rho[h] = 0.7
+                self.hubs_is_closed_group[h] = True
+                self.hubs_is_closed_space[h] = True
+                hubs_names.append(f"Trabajo {h-S+1}" if W > 1 else "Trabajo")
+                hubs_colors.append("Orange")
+                
+            # 3. Supermarkets
+            for h in range(S + W, S + W + M):
+                self.hubs_types.append("agenda")
+                self.hubs_lambda[h] = 0.5
+                self.hubs_alpha[h] = 3.0
+                self.hubs_beta[h] = 0.25 / 24.0
+                self.hubs_kappa[h] = 0.0
+                self.hubs_ell[h] = 0.0
+                self.hubs_rho[h] = 0.9
+                self.hubs_is_closed_group[h] = False
+                self.hubs_is_closed_space[h] = True  # Supermarket is closed/indoor space!
+                hubs_names.append(f"Supermercado {h-S-W+1}" if M > 1 else "Supermercado")
+                hubs_colors.append("Cyan")
+                
+            # 4. El Centro (Agenda - Open)
+            h_centro = S + W + M
+            self.hubs_coords[h_centro] = [center_x, center_y]
             self.hubs_types.append("agenda")
-            self.hubs_lambda[h] = 5.0 / 7.0
-            self.hubs_alpha[h] = 16.0
-            self.hubs_beta[h] = 0.5 / 24.0
-            self.hubs_kappa[h] = 0.0
-            self.hubs_ell[h] = 0.0
-            self.hubs_rho[h] = 0.7
-            self.hubs_is_closed_group[h] = True
-            self.hubs_is_closed_space[h] = True
-            hubs_names.append(f"Trabajo {h-S+1}" if W > 1 else "Trabajo")
-            hubs_colors.append("Orange")
+            self.hubs_lambda[h_centro] = 0.4                  # visits frequency (0.4 visits/day)
+            self.hubs_alpha[h_centro] = 4.0                   # Gamma shape parameter for stay
+            self.hubs_beta[h_centro] = 0.25 / 24.0            # Gamma scale parameter for stay (1.0 hour)
+            self.hubs_kappa[h_centro] = 0.0
+            self.hubs_ell[h_centro] = 0.0
+            self.hubs_rho[h_centro] = 1.0
+            self.hubs_is_closed_group[h_centro] = False
+            self.hubs_is_closed_space[h_centro] = False       # Centro is open/outdoor space!
+            hubs_names.append("El Centro")
+            hubs_colors.append("Green")
             
-        # 3. Supermarkets
-        for h in range(S + W, S + W + M):
-            self.hubs_types.append("agenda")
-            self.hubs_lambda[h] = 0.5
-            self.hubs_alpha[h] = 3.0
-            self.hubs_beta[h] = 0.25 / 24.0
-            self.hubs_kappa[h] = 0.0
-            self.hubs_ell[h] = 0.0
-            self.hubs_rho[h] = 0.9
-            self.hubs_is_closed_group[h] = False
-            self.hubs_is_closed_space[h] = True  # Supermarket is closed/indoor space!
-            hubs_names.append(f"Supermercado {h-S-W+1}" if M > 1 else "Supermercado")
-            hubs_colors.append("Cyan")
+            # Build environments list for parquet export
+            hubs_ambientes = []
+            for h in range(self.H):
+                hubs_ambientes.append("cerrado" if self.hubs_is_closed_space[h] else "abierto")
             
-        # 4. El Centro (Agenda - Open)
-        h_centro = S + W + M
-        self.hubs_coords[h_centro] = [center_x, center_y]
-        self.hubs_types.append("agenda")
-        self.hubs_lambda[h_centro] = 0.4                  # visits frequency (0.4 visits/day)
-        self.hubs_alpha[h_centro] = 4.0                   # Gamma shape parameter for stay
-        self.hubs_beta[h_centro] = 0.25 / 24.0            # Gamma scale parameter for stay (1.0 hour)
-        self.hubs_kappa[h_centro] = 0.0
-        self.hubs_ell[h_centro] = 0.0
-        self.hubs_rho[h_centro] = 1.0
-        self.hubs_is_closed_group[h_centro] = False
-        self.hubs_is_closed_space[h_centro] = False       # Centro is open/outdoor space!
-        hubs_names.append("El Centro")
-        hubs_colors.append("Green")
-        
-        # Build environments list for parquet export
-        hubs_ambientes = []
-        for h in range(self.H):
-            hubs_ambientes.append("cerrado" if self.hubs_is_closed_space[h] else "abierto")
-        
-        # Distribute agenda hubs coordinates in the ring
-        for h in range(S + W + M):
-            angle = 2.0 * np.pi * h / (S + W + M)
-            self.hubs_coords[h, 0] = center_x + R_circle * np.cos(angle)
-            self.hubs_coords[h, 1] = center_y + R_circle * np.sin(angle)
+            # Distribute agenda hubs coordinates in the ring
+            for h in range(S + W + M):
+                angle = 2.0 * np.pi * h / (S + W + M)
+                self.hubs_coords[h, 0] = center_x + R_circle * np.cos(angle)
+                self.hubs_coords[h, 1] = center_y + R_circle * np.sin(angle)
             
         # Initialize remaining visit timer array and transit start/end coords
         self.remaining_visit_time = np.zeros((self.N, self.H), dtype=np.float32)
@@ -178,17 +193,18 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.transit_end_coords = np.zeros((self.N, 2), dtype=np.float32)
         self.hub_group_id = np.full((self.N, self.H), -1, dtype=np.int32)
         
-        # School assignment for children
-        child_indices = np.where(self.edades < 18)[0]
-        for idx_pos, idx in enumerate(child_indices):
-            h_school = idx_pos % S
-            self.hub_group_id[idx, h_school] = (idx_pos // S) // 20  # class size of 20
-            
-        # Work assignment for adults (ages 18 to 65 only, retirees are excluded!)
-        adult_indices = np.where((self.edades >= 18) & (self.edades <= 65))[0]
-        for idx_pos, idx in enumerate(adult_indices):
-            h_work = S + (idx_pos % W)
-            self.hub_group_id[idx, h_work] = (idx_pos // W) // 12  # office size of 12
+        if self.H > 0:
+            # School assignment for children
+            child_indices = np.where(self.edades < 18)[0]
+            for idx_pos, idx in enumerate(child_indices):
+                h_school = idx_pos % S
+                self.hub_group_id[idx, h_school] = (idx_pos // S) // 20  # class size of 20
+                
+            # Work assignment for adults (ages 18 to 65 only, retirees are excluded!)
+            adult_indices = np.where((self.edades >= 18) & (self.edades <= 65))[0]
+            for idx_pos, idx in enumerate(adult_indices):
+                h_work = S + (idx_pos % W)
+                self.hub_group_id[idx, h_work] = (idx_pos // W) // 12  # office size of 12
 
         # ponytail: initialize household allocations and coordinates, avoiding hub positions
         H_hogar = int(np.ceil(self.N / self.N_hogar))
@@ -249,6 +265,10 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             })
             df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
             print(f"Exportado {base_dir / 'hubs.parquet'}")
+        else:
+            pl.DataFrame({
+                "x": [], "y": [], "tipo": [], "nombre": [], "color": [], "ambiente": []
+            }).write_parquet(base_dir / "hubs.parquet", compression="snappy")
             
         # ponytail: Initialize Lagrangian aerosol particle arrays for gas simulation
         self.aerosol_coords = np.zeros((0, 2), dtype=np.float32)
@@ -368,6 +388,10 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         if self.H > 0 and np.any(mask_hub):
             scale_factors[mask_hub] = self.hubs_rho[visiting_hub_idx[mask_hub]]
         emission_avg *= scale_factors
+        
+        # Apply mask (barbijo) compliance emission reduction
+        if hasattr(self, "usa_barbijo"):
+            emission_avg[self.usa_barbijo] *= (1.0 - getattr(self, "barbijo_eficacia", 0.0))
 
         # 5. DOSIS FIELD CALCULATIONS (t_n)
         coords_t = np.column_stack((self.coord_x, self.coord_y))
@@ -492,31 +516,32 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         pred_y[mask_high_y] = 2.0 * self.L - pred_y[mask_high_y]
         pred_y = np.clip(pred_y, 0.0, self.L)
         
-        # ponytail: enforce radial bounds around target centers instead of hard coordinate locking
-        # Home radial bounds (max radius = 1.2 units)
-        dx_home = pred_x - self.home_coords[:, 0]
-        dy_home = pred_y - self.home_coords[:, 1]
-        dist_home = np.sqrt(dx_home**2 + dy_home**2)
-        too_far_home = mask_home & (dist_home > 1.2)
-        pred_x[too_far_home] = self.home_coords[too_far_home, 0] + (dx_home[too_far_home] / dist_home[too_far_home]) * 1.2
-        pred_y[too_far_home] = self.home_coords[too_far_home, 1] + (dy_home[too_far_home] / dist_home[too_far_home]) * 1.2
-        
-        # Hub radial bounds (max radius = 2.5 units)
-        if np.any(mask_hub) and self.H > 0:
-            hub_idx = visiting_hub_idx[mask_hub]
-            h_cx = self.hubs_coords[hub_idx, 0]
-            h_cy = self.hubs_coords[hub_idx, 1]
-            dx_hub = pred_x[mask_hub] - h_cx
-            dy_hub = pred_y[mask_hub] - h_cy
-            dist_hub = np.sqrt(dx_hub**2 + dy_hub**2)
-            too_far_hub = dist_hub > 2.5
+        # ponytail: enforce radial bounds around target centers instead of hard coordinate locking (only if not movimiento_libre)
+        if not getattr(self, "movimiento_libre", False):
+            # Home radial bounds (max radius = 1.2 units)
+            dx_home = pred_x - self.home_coords[:, 0]
+            dy_home = pred_y - self.home_coords[:, 1]
+            dist_home = np.sqrt(dx_home**2 + dy_home**2)
+            too_far_home = mask_home & (dist_home > 1.2)
+            pred_x[too_far_home] = self.home_coords[too_far_home, 0] + (dx_home[too_far_home] / dist_home[too_far_home]) * 1.2
+            pred_y[too_far_home] = self.home_coords[too_far_home, 1] + (dy_home[too_far_home] / dist_home[too_far_home]) * 1.2
             
-            temp_x = pred_x[mask_hub]
-            temp_y = pred_y[mask_hub]
-            temp_x[too_far_hub] = h_cx[too_far_hub] + (dx_hub[too_far_hub] / dist_hub[too_far_hub]) * 2.5
-            temp_y[too_far_hub] = h_cy[too_far_hub] + (dy_hub[too_far_hub] / dist_hub[too_far_hub]) * 2.5
-            pred_x[mask_hub] = temp_x
-            pred_y[mask_hub] = temp_y
+            # Hub radial bounds (max radius = 2.5 units)
+            if np.any(mask_hub) and self.H > 0:
+                hub_idx = visiting_hub_idx[mask_hub]
+                h_cx = self.hubs_coords[hub_idx, 0]
+                h_cy = self.hubs_coords[hub_idx, 1]
+                dx_hub = pred_x[mask_hub] - h_cx
+                dy_hub = pred_y[mask_hub] - h_cy
+                dist_hub = np.sqrt(dx_hub**2 + dy_hub**2)
+                too_far_hub = dist_hub > 2.5
+                
+                temp_x = pred_x[mask_hub]
+                temp_y = pred_y[mask_hub]
+                temp_x[too_far_hub] = h_cx[too_far_hub] + (dx_hub[too_far_hub] / dist_hub[too_far_hub]) * 2.5
+                temp_y[too_far_hub] = h_cy[too_far_hub] + (dy_hub[too_far_hub] / dist_hub[too_far_hub]) * 2.5
+                pred_x[mask_hub] = temp_x
+                pred_y[mask_hub] = temp_y
 
         # 7. EVALUATE PREDICTED DOSIS FIELD (t_n+1)
         coords_pred = np.column_stack((pred_x, pred_y))
@@ -665,6 +690,26 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.telemetry['aerosol_x'].append(np.zeros(0, dtype=np.float32))
             self.telemetry['aerosol_y'].append(np.zeros(0, dtype=np.float32))
             self.telemetry['aerosol_dosis'].append(np.zeros(0, dtype=np.float32))
+
+    def _fase3_transiciones(self, t):
+        """Sobrescribe transiciones para controlar la cuarentena basada en porcentaje de infectados."""
+        # Calculate active infected percentage
+        pct_infected = np.sum(self.state == self.I) / self.N
+        
+        # Check if quarantine should trigger
+        trigger_met = False
+        if getattr(self, "enable_quarantine", True):
+            if pct_infected >= getattr(self, "quarantine_trigger_pct", 0.05):
+                trigger_met = True
+                
+        # Dynamically set base class intervention threshold to force/prevent quarantine triggers
+        if trigger_met:
+            self.T_trigger_intervencion = 0.0  # Force trigger instantly
+        else:
+            self.T_trigger_intervencion = 999999.0  # Never trigger
+            self.quarantined.fill(False)
+            
+        super()._fase3_transiciones(t)
 
     def run(self, output_dir=None, n_seed=10, seed=None):
         """Bucle principal de la simulación adaptada al continuo."""
