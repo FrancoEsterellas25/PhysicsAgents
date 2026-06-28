@@ -114,14 +114,17 @@ def main():
         
         # Legend dummies (Traces 0-4)
         for s in states:
-            frame_data.append(go.Scatter())
+            frame_data.append(go.Scatter(x=[None], y=[None], xaxis="x", yaxis="y"))
             
         # Agent coordinates and updated state colors (Trace 5)
         frame_data.append(
             go.Scatter(
                 x=df_t["coord_x"].to_numpy(),
                 y=df_t["coord_y"].to_numpy(),
-                marker=dict(symbol="square", color=colores_t, size=9, opacity=0.9)
+                mode="markers",
+                marker=dict(symbol="square", color=colores_t, size=9, opacity=0.9),
+                xaxis="x",
+                yaxis="y"
             )
         )
             
@@ -131,11 +134,13 @@ def main():
             frame_data.append(
                 go.Scatter(
                     x=tiempos[0:t_idx+1],
-                    y=y_val
+                    y=y_val,
+                    xaxis="x2",
+                    yaxis="y2"
                 )
             )
             
-        frames.append(go.Frame(data=frame_data, name=f"dia_{t_val:.1f}"))
+        frames.append(go.Frame(data=frame_data, name=f"dia_{t_val:.1f}", traces=list(range(11))))
 
     fig.frames = frames
 
