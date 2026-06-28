@@ -185,15 +185,12 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                             mask_at_home = mask_at_home & ~starts_visit
 
         # 3. FORCE POSITIONS (Home and Hubs)
+        # ponytail: Allow agents to keep their local wandered positions.
+        # Enforce local bounding radius clipping at the end of the step instead.
         mask_home = (self.motion_state == 0)
-        self.coord_x[mask_home] = self.home_coords[mask_home, 0]
-        self.coord_y[mask_home] = self.home_coords[mask_home, 1]
-        
         mask_hub = (self.motion_state == 2)
         if np.any(mask_hub) and self.H > 0:
             visiting_hub_idx = np.argmax(self.remaining_visit_time > 0, axis=1)
-            self.coord_x[mask_hub] = self.hubs_coords[visiting_hub_idx[mask_hub], 0]
-            self.coord_y[mask_hub] = self.hubs_coords[visiting_hub_idx[mask_hub], 1]
 
         # 4. EMISSION SCALING (Domestic rho_hogar vs Hubs rho_h)
         sigma = self.sigma_base * (1.0 - 0.5 * self.omega_ad)
@@ -228,7 +225,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             np.add.at(R_t, i_idx, kernel_vals * emission_avg[j_idx] * mask_I[j_idx])
             np.add.at(R_t, j_idx, kernel_vals * emission_avg[i_idx] * mask_I[i_idx])
 
-        # 6. SPATIAL PREDICTION (Free brownian motion only for agents in transit)
+        # 6. SPATIAL PREDICTION (Free brownian motion only for agents in transit, local diffusion for home/hub)
         D_basal_agent = self.D_basal * (1.0 - self.c_DS * self.eta_mov)
         v_pow = self.viral_load**self.n_mov
         vsint_pow = self.V_sint**self.n_mov
@@ -238,10 +235,18 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             D_basal_agent + self.D_min
         )
         
-        # Only agents in transit (state == 1) perform Brownian movement
-        D_esp = np.where(self.motion_state == 1, D_esp, 0.0)
+        # ponytail: assign non-zero diffusion coefficients for home and hub states to make the space look alive
+        D_esp = np.where(
+            self.motion_state == 1,
+            D_esp,  # full speed in transit
+            np.where(
+                self.motion_state == 2,
+                0.20 * D_basal_agent,  # moderate local movement in hubs (e.g. plaza, school)
+                0.08 * D_basal_agent   # slow local movement within household bounds
+            )
+        )
         
-        # Gravitational Drift (also only applies to transit agents)
+        # Gravitational Drift (only applies to transit agents)
         drift_x = np.zeros(self.N, dtype=np.float32)
         drift_y = np.zeros(self.N, dtype=np.float32)
         if self.H > 0:
@@ -279,12 +284,31 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         pred_y[mask_high_y] = 2.0 * self.L - pred_y[mask_high_y]
         pred_y = np.clip(pred_y, 0.0, self.L)
         
-        # Lock coordinates of home/hub agents in predictions
-        pred_x[mask_home] = self.home_coords[mask_home, 0]
-        pred_y[mask_home] = self.home_coords[mask_home, 1]
+        # ponytail: enforce radial bounds around target centers instead of hard coordinate locking
+        # Home radial bounds (max radius = 1.2 units)
+        dx_home = pred_x - self.home_coords[:, 0]
+        dy_home = pred_y - self.home_coords[:, 1]
+        dist_home = np.sqrt(dx_home**2 + dy_home**2)
+        too_far_home = mask_home & (dist_home > 1.2)
+        pred_x[too_far_home] = self.home_coords[too_far_home, 0] + (dx_home[too_far_home] / dist_home[too_far_home]) * 1.2
+        pred_y[too_far_home] = self.home_coords[too_far_home, 1] + (dy_home[too_far_home] / dist_home[too_far_home]) * 1.2
+        
+        # Hub radial bounds (max radius = 2.5 units)
         if np.any(mask_hub) and self.H > 0:
-            pred_x[mask_hub] = self.hubs_coords[visiting_hub_idx[mask_hub], 0]
-            pred_y[mask_hub] = self.hubs_coords[visiting_hub_idx[mask_hub], 1]
+            hub_idx = visiting_hub_idx[mask_hub]
+            h_cx = self.hubs_coords[hub_idx, 0]
+            h_cy = self.hubs_coords[hub_idx, 1]
+            dx_hub = pred_x[mask_hub] - h_cx
+            dy_hub = pred_y[mask_hub] - h_cy
+            dist_hub = np.sqrt(dx_hub**2 + dy_hub**2)
+            too_far_hub = dist_hub > 2.5
+            
+            temp_x = pred_x[mask_hub]
+            temp_y = pred_y[mask_hub]
+            temp_x[too_far_hub] = h_cx[too_far_hub] + (dx_hub[too_far_hub] / dist_hub[too_far_hub]) * 2.5
+            temp_y[too_far_hub] = h_cy[too_far_hub] + (dy_hub[too_far_hub] / dist_hub[too_far_hub]) * 2.5
+            pred_x[mask_hub] = temp_x
+            pred_y[mask_hub] = temp_y
 
         # 7. EVALUATE PREDICTED DOSIS FIELD (t_n+1)
         coords_pred = np.column_stack((pred_x, pred_y))
