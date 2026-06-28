@@ -76,17 +76,25 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.hubs_is_closed = np.zeros(self.H, dtype=bool)
         self.hub_group_id = np.full((self.N, self.H), -1, dtype=np.int32)
         
-        # Assign fixed groups in closed hubs (Escuela = 0, Trabajo = 1)
-        for h in range(self.H):
-            if self.hubs_is_closed[h]:
-                if h == 0:  # Escuela: closed, children < 18 only
-                    child_indices = np.where(self.edades < 18)[0]
-                    for idx_pos, idx in enumerate(child_indices):
-                        self.hub_group_id[idx, h] = idx_pos // 20  # class size of 20
-                elif h == 1:  # Trabajo: closed, adults 18 to 65 only
-                    adult_indices = np.where((self.edades >= 18) & (self.edades <= 65))[0]
-                    for idx_pos, idx in enumerate(adult_indices):
-                        self.hub_group_id[idx, h] = idx_pos // 15  # office size of 15
+        # Assign fixed groups in closed hubs (Escuela = Hub 0, Trabajo centers = Hubs 1 to W)
+        closed_hubs = [h for h in range(self.H) if self.hubs_is_closed[h]]
+        if len(closed_hubs) > 0:
+            school_hub = closed_hubs[0]  # First closed hub is Escuela
+            work_hubs = closed_hubs[1:]  # Remaining closed hubs are Work centers
+            
+            # School assignment for children
+            child_indices = np.where(self.edades < 18)[0]
+            for idx_pos, idx in enumerate(child_indices):
+                self.hub_group_id[idx, school_hub] = idx_pos // 20  # class size of 20
+                
+            # Work assignment for adults (distributed across work_hubs)
+            if len(work_hubs) > 0:
+                adult_indices = np.where((self.edades >= 18) & (self.edades <= 65))[0]
+                for idx_pos, idx in enumerate(adult_indices):
+                    # Distribute adults evenly across work centers
+                    h_work = work_hubs[idx_pos % len(work_hubs)]
+                    # Assign to a team of size 12 within that specific work center
+                    self.hub_group_id[idx, h_work] = (idx_pos // len(work_hubs)) // 12
 
         # ponytail: initialize household allocations and coordinates
         H_hogar = int(np.ceil(self.N / self.N_hogar))

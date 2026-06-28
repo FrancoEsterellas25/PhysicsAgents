@@ -215,7 +215,7 @@ def main():
                 if idx == 0:
                     name = "Escuela"
                     color = "Yellow"
-                elif idx == 1:
+                elif 1 <= idx <= 4:
                     name = "Trabajo"
                     color = "Orange"
                 else:

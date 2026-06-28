@@ -87,22 +87,25 @@ def main():
     
     # ponytail: configure hubs and clinical interventions (Part VIII)
     if HUBS_ACTIVOS:
-        sim.H = 4
+        sim.H = 7
         import numpy as np
         sim.hubs_coords = np.array([
             [25.0, 25.0],  # Hub 0: Escuela (Agenda - Cerrado)
-            [40.0, 40.0],  # Hub 1: Trabajo (Agenda - Cerrado)
-            [15.0, 35.0],  # Hub 2: Supermercado (Agenda - Abierto)
-            [10.0, 10.0]   # Hub 3: Plaza (Gravitatorio - Abierto)
+            [12.5, 12.5],  # Hub 1: Trabajo 1 (Agenda - Cerrado)
+            [37.5, 12.5],  # Hub 2: Trabajo 2 (Agenda - Cerrado)
+            [12.5, 37.5],  # Hub 3: Trabajo 3 (Agenda - Cerrado)
+            [37.5, 37.5],  # Hub 4: Trabajo 4 (Agenda - Cerrado)
+            [25.0, 40.0],  # Hub 5: Supermercado (Agenda - Abierto)
+            [25.0, 10.0]   # Hub 6: Plaza (Gravitatorio - Abierto)
         ], dtype=np.float32)
-        sim.hubs_types = ["agenda", "agenda", "agenda", "gravitatorio"]
-        sim.hubs_lambda = np.array([5.0/7.0, 5.0/7.0, 0.5, 0.0], dtype=np.float32)  # Frecuencia de visita (visitas/día)
-        sim.hubs_alpha = np.array([12.0, 16.0, 3.0, 0.0], dtype=np.float32)         # Forma Gamma para estadía
-        sim.hubs_beta = np.array([0.5 / 24.0, 0.5 / 24.0, 0.25 / 24.0, 0.0], dtype=np.float32) # Escala Gamma en días
-        sim.hubs_kappa = np.array([0.0, 0.0, 0.0, 2.5], dtype=np.float32)
-        sim.hubs_ell = np.array([0.0, 0.0, 0.0, 8.0], dtype=np.float32)
-        sim.hubs_rho = np.array([0.8, 0.7, 0.9, 1.0], dtype=np.float32)
-        sim.hubs_is_closed = np.array([True, True, False, False], dtype=bool)
+        sim.hubs_types = ["agenda", "agenda", "agenda", "agenda", "agenda", "agenda", "gravitatorio"]
+        sim.hubs_lambda = np.array([5.0/7.0, 5.0/7.0, 5.0/7.0, 5.0/7.0, 5.0/7.0, 0.5, 0.0], dtype=np.float32)  # visitas/día
+        sim.hubs_alpha = np.array([12.0, 16.0, 16.0, 16.0, 16.0, 3.0, 0.0], dtype=np.float32)                 # Forma Gamma stay
+        sim.hubs_beta = np.array([0.5/24.0, 0.5/24.0, 0.5/24.0, 0.5/24.0, 0.5/24.0, 0.25/24.0, 0.0], dtype=np.float32) # Escala Gamma días
+        sim.hubs_kappa = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.5], dtype=np.float32)
+        sim.hubs_ell = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0], dtype=np.float32)
+        sim.hubs_rho = np.array([0.8, 0.7, 0.7, 0.7, 0.7, 0.9, 1.0], dtype=np.float32)
+        sim.hubs_is_closed = np.array([True, True, True, True, True, False, False], dtype=bool)
         
     sim.t_trigger = T_TRIGGER_INTERVENCION
     sim.p_Q = EFICACIA_CUARENTENA_PQ

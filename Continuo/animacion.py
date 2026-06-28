@@ -62,7 +62,7 @@ class EscenaEpidemiologicaContinuo(Scene):
                     if idx == 0:
                         name = "Escuela"
                         color = YELLOW
-                    elif idx == 1:
+                    elif 1 <= idx <= 4:
                         name = "Trabajo"
                         color = ORANGE
                     else:
