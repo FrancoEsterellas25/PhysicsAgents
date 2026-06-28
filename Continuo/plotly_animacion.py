@@ -12,6 +12,7 @@ def main():
     # 1. Load data
     try:
         df_dinamico = pl.read_parquet(base_dir / "telemetria_dinamica.parquet")
+        df_virus = pl.read_parquet(base_dir / "telemetria_virus.parquet")
     except Exception as e:
         print(f"Error loading parquet files: {e}")
         return
@@ -50,7 +51,7 @@ def main():
     # 2. Build Subplot Layout
     fig = make_subplots(
         rows=1, cols=2,
-        subplot_titles=("Espacio Físico (Movimiento Suave)", "Evolución Epidemiológica (%)"),
+        subplot_titles=("Espacio Físico (Movimiento Suave y Carga Viral)", "Evolución Epidemiológica (%)"),
         column_widths=[0.55, 0.45],
         horizontal_spacing=0.08
     )
@@ -59,7 +60,44 @@ def main():
     df_t0 = df_dinamico.filter(pl.col("tiempo") == 0)
     colores_t0 = [COLOR_MAP[st] for st in df_t0["estado"].to_numpy()]
     
-    # Trace 0-4: Empty dummy traces for the legend
+    # Trace 0: Environmental Virus Density Heatmap (dynamic background)
+    GRID_RES = 40
+    grid_t0_flat = df_virus.filter(pl.col("tiempo") == 0)["virus_grid"].to_list()[0]
+    grid_t0 = np.array(grid_t0_flat, dtype=np.float32).reshape((GRID_RES, GRID_RES))
+    x_grid = np.linspace(0, L, GRID_RES)
+    y_grid = np.linspace(0, L, GRID_RES)
+    
+    fig.add_trace(
+        go.Heatmap(
+            x=x_grid,
+            y=y_grid,
+            z=grid_t0,
+            colorscale="YlOrRd",
+            showscale=False,
+            opacity=0.45,
+            hoverinfo="skip",
+            zmin=0.0,
+            zmax=2.0
+        ),
+        row=1, col=1
+    )
+    
+    # Trace 1: Unique residences/homes (static background)
+    df_estatico = pl.read_parquet(base_dir / "mapa_estatico.parquet")
+    unique_homes = df_estatico.select(["hogar_x", "hogar_y"]).unique()
+    fig.add_trace(
+        go.Scatter(
+            x=unique_homes["hogar_x"].to_numpy(),
+            y=unique_homes["hogar_y"].to_numpy(),
+            mode="markers",
+            marker=dict(symbol="x", color="grey", size=4, opacity=0.3),
+            name="Residencia (Hogar)",
+            showlegend=True
+        ),
+        row=1, col=1
+    )
+    
+    # Trace 2-6: Empty dummy traces for the legend
     for s in states:
         fig.add_trace(
             go.Scatter(
@@ -74,7 +112,7 @@ def main():
             row=1, col=1
         )
         
-    # Trace 5: The actual single Scatter trace with ALL agents (strictly sorted by id_agente)
+    # Trace 7: The actual single Scatter trace with ALL agents (strictly sorted by id_agente)
     fig.add_trace(
         go.Scatter(
             x=df_t0["coord_x"].to_numpy(),
@@ -86,7 +124,7 @@ def main():
         row=1, col=1
     )
         
-    # Trace 6-10: Stacked Area curves (one per state)
+    # Trace 8-12: Stacked Area curves (one per state)
     for s in states:
         y_val = 100.0 * historico_conteos[0:1, s] / N
         fig.add_trace(
@@ -110,18 +148,22 @@ def main():
     for t_idx, t_val in enumerate(tiempos):
         df_t = df_dinamico.filter(pl.col("tiempo") == t_val)
         colores_t = [COLOR_MAP[st] for st in df_t["estado"].to_numpy()]
-        frame_data = []
         
-        # Agent coordinates and updated state colors (Trace 5)
-        frame_data.append(
+        # Load virus grid for this frame
+        grid_t_flat = df_virus.filter(pl.col("tiempo") == t_val)["virus_grid"].to_list()[0]
+        grid_t = np.array(grid_t_flat, dtype=np.float32).reshape((GRID_RES, GRID_RES))
+        
+        frame_data = [
+            go.Heatmap(z=grid_t),
+            # Agent coordinates (Trace 7)
             go.Scatter(
                 x=df_t["coord_x"].to_numpy(),
                 y=df_t["coord_y"].to_numpy(),
                 marker=dict(color=colores_t, size=5, opacity=0.8)
             )
-        )
+        ]
             
-        # Stacked curves history (Traces 6-10)
+        # Stacked curves history (Traces 8-12)
         for s in states:
             y_val = 100.0 * historico_conteos[0:t_idx+1, s] / N
             frame_data.append(
@@ -131,7 +173,7 @@ def main():
                 )
             )
             
-        frames.append(go.Frame(data=frame_data, name=f"frame_{t_idx}", traces=list(range(5, 11))))
+        frames.append(go.Frame(data=frame_data, name=f"frame_{t_idx}", traces=[0, 7, 8, 9, 10, 11, 12]))
 
     fig.frames = frames
 

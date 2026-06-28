@@ -231,6 +231,23 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             })
             df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
             print(f"Exportado {base_dir / 'hubs.parquet'}")
+            
+        # ponytail: Initialize virus concentration grid (40x40 resolution)
+        self.GRID_RES = 40
+        self.virus_grid = np.zeros((self.GRID_RES, self.GRID_RES), dtype=np.float32)
+        self.decay_grid = np.full((self.GRID_RES, self.GRID_RES), self.delta_ext, dtype=np.float32)
+        
+        # Populate closed space decay cells (Hogar, Escuela, Trabajo, Supermarket)
+        for h_idx in range(self.home_coords.shape[0]):
+            hx = np.clip(int(self.home_coords[h_idx, 0] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
+            hy = np.clip(int(self.home_coords[h_idx, 1] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
+            self.decay_grid[hy, hx] = self.delta_cerrado
+            
+        for h in range(self.H):
+            hx = np.clip(int(self.hubs_coords[h, 0] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
+            hy = np.clip(int(self.hubs_coords[h, 1] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
+            dec = self.delta_cerrado if self.hubs_is_closed_space[h] else self.delta_abierto
+            self.decay_grid[max(0, hy-1):min(self.GRID_RES, hy+2), max(0, hx-1):min(self.GRID_RES, hx+2)] = dec
 
     def _fase2_contagio(self):
         """
@@ -529,6 +546,20 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                 np.add.at(R_pred, i_idx_p, kernel_vals_p * emission_avg[j_idx_p] * mask_I[j_idx_p])
                 np.add.at(R_pred, j_idx_p, kernel_vals_p * emission_avg[i_idx_p] * mask_I[i_idx_p])
             
+        # Update spatial virus grid: decay & accumulation of emissions
+        self.virus_grid = self.virus_grid * np.exp(-self.decay_grid * self.dt)
+        if np.any(mask_I):
+            for idx in np.where(mask_I)[0]:
+                gx = np.clip(int(self.coord_x[idx] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
+                gy = np.clip(int(self.coord_y[idx] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
+                e_val = emission_avg[idx] * self.dt * 15.0
+                for dy in [-1, 0, 1]:
+                    for dx in [-1, 0, 1]:
+                        ny, nx = gy + dy, gx + dx
+                        if 0 <= ny < self.GRID_RES and 0 <= nx < self.GRID_RES:
+                            weight = 1.0 if (dy == 0 and dx == 0) else 0.4
+                            self.virus_grid[ny, nx] += e_val * weight
+            
         # 8. UPDATE DOSIS AND CONSOLIDATE (using spatially heterogeneous decay)
         delta_agents = np.full(self.N, self.delta_ext, dtype=np.float32)
         # Closed spaces: Home (motion_state == 0)
@@ -575,10 +606,14 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.telemetry['coord_y'] = []
             self.telemetry['dosis'] = []
             self.telemetry['motion_state'] = []
+            self.telemetry['virus_tiempo'] = []
+            self.telemetry['virus_grid'] = []
         self.telemetry['coord_x'].append(self.coord_x.copy())
         self.telemetry['coord_y'].append(self.coord_y.copy())
         self.telemetry['dosis'].append(self.dosis.copy())
         self.telemetry['motion_state'].append(self.motion_state.copy())
+        self.telemetry['virus_tiempo'].append(t)
+        self.telemetry['virus_grid'].append(self.virus_grid.copy().flatten())
 
     def run(self, output_dir=None, n_seed=10, seed=None):
         """Bucle principal de la simulación adaptada al continuo."""
@@ -624,6 +659,14 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             path_dir = Path(output_dir)
             df_dinamico.write_parquet(path_dir / "telemetria_dinamica.parquet", compression="snappy")
             print(f"Exportado {path_dir / 'telemetria_dinamica.parquet'} (Continuo)")
+            
+            # Export virus concentration grid history
+            df_virus = pl.DataFrame({
+                "tiempo": self.telemetry['virus_tiempo'],
+                "virus_grid": [list(grid) for grid in self.telemetry['virus_grid']]
+            })
+            df_virus.write_parquet(path_dir / "telemetria_virus.parquet", compression="snappy")
+            print(f"Exportado {path_dir / 'telemetria_virus.parquet'}")
             
         return df_dinamico
 
