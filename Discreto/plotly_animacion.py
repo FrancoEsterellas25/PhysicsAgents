@@ -118,10 +118,8 @@ def main():
         colores_t = [COLOR_MAP[st] for st in df_t["estado"].to_numpy()]
         frame_data = []
         
-        # Legend dummies (Traces 0-4)
-        for s in states:
-            frame_data.append(go.Scatter())
-            
+        frame_data = []
+        
         # Agent coordinates and updated state colors (Trace 5)
         frame_data.append(
             go.Scatter(
@@ -141,7 +139,7 @@ def main():
                 )
             )
             
-        frames.append(go.Frame(data=frame_data, name=f"frame_{t_idx}"))
+        frames.append(go.Frame(data=frame_data, name=f"frame_{t_idx}", traces=list(range(5, 11))))
 
     fig.frames = frames
 
