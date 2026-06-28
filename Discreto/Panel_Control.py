@@ -92,6 +92,17 @@ def main():
     sim.run(output_dir=base_dir, n_seed=AGENTES_INFECTADOS_INICIALES, seed=SEMILLA_INICIAL)
     print(" Archivos Telemetría (.parquet) generados con éxito.\n")
     
+    # ponytail: Generar animación interactiva Plotly HTML
+    print("===================================================")
+    print(" INICIANDO GENERACIÓN DE ANIMACIÓN INTERACTIVA PLOTLY HTML")
+    print("===================================================")
+    plotly_script = str(base_dir / "plotly_animacion.py")
+    try:
+        subprocess.run(["python", plotly_script], check=True)
+        print(" Archivo HTML de Plotly generado con éxito.\n")
+    except Exception as e:
+        print(f" Error generando animación Plotly: {e}\n")
+    
     # 2. Configurar el renderizado visual de Manim
     print("===================================================")
     print(f" INICIANDO RENDERIZADO VISUAL EN CALIDAD '{CALIDAD.upper()}'")
