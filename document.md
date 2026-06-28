@@ -375,6 +375,8 @@ donde ε > 0 representa la siembra viral inicial. El resto de la población mant
 
 ---
 
+---
+
 ## Parte VIII: Extensiones Estructurales y Experimentos Canónicos
 
 Esta sección formaliza dos ejes de extensión del modelo base: la introducción de **movilidad estructurada** (puntos de atracción y multiparche) y el **análisis de intervenciones de política sanitaria** (cuarentena con falla asintomática, distancia social). Cada extensión se define en términos del modelo existente, explicita qué parámetros modifica y propone el experimento canónico que la valida.
@@ -382,6 +384,48 @@ Esta sección formaliza dos ejes de extensión del modelo base: la introducción
 ---
 
 ### VIII.A — Movilidad Estructurada
+
+La movilidad de los agentes se organiza en torno a una jerarquía de tres niveles: el **hogar** (estado default, residencia permanente), los **hubs de agenda** (destinos sistemáticos con frecuencia y duración propias) y los **hubs gravitatorios** (zonas de atracción pasiva). Esta jerarquía tiene precedencia estricta: la agenda suspende la difusión; el hogar es el estado al que se regresa cuando no hay ningún evento activo.
+
+---
+
+#### VIII.A.0 Hogares y Transmisión Doméstica — Enfoque Continuo
+
+**Motivación.** El modelo browniano base no distingue el tiempo que un agente pasa en su residencia del tiempo que pasa en cualquier otra zona del dominio. Sin embargo, la dinámica doméstica tiene propiedades epidemiológicas cualitativamente distintas: convivencia prolongada y nocturna, espacio cerrado, grupo pequeño con exposición mutua acumulada. Modelar el hogar como estado default — en lugar de como un hub más con $\lambda_{i,h}$ — captura esta asimetría: el agente *siempre* regresa al hogar, no lo visita.
+
+**Asignación de hogares.** Al inicializar la simulación, los $N$ agentes se agrupan en $N_{hog}$ hogares. Cada hogar $k$ tiene una posición fija $\mathbf{h}_k$ en el dominio y un conjunto de convivientes $\mathcal{F}_k$ con $|\mathcal{F}_k| \sim \text{discreto}(\mathbf{p}_{tam})$, donde $\mathbf{p}_{tam}$ es la distribución de tamaño de hogar (calibrable desde datos censales). La asignación es permanente durante toda la simulación.
+
+**Estado default.** El agente $i$ está en hogar cuando no tiene ningún evento de agenda activo ni tránsito en curso:
+
+$$\mathbf{x}_i(t) = \mathbf{h}_{k(i)} \qquad \text{si } \nexists\, h : \texttt{tiempo\_restante\_visita}[i,h] > 0 \text{ y } \nexists \text{ tránsito activo}$$
+
+Durante este estado el operador de Langevin se suspende, igual que en una visita de agenda. La diferencia es que no hay temporizador que expire — el agente permanece hasta que el siguiente evento de agenda lo saque.
+
+**Agenda diaria.** El tiempo en hogar surge naturalmente de la diferencia entre el día completo y las salidas agendadas. Para modelar rutinas (sueño, comidas) sin necesidad de una agenda determinista compleja, se introduce un bloque de **permanencia nocturna** $[t_{noche}, t_{día}]$ durante el cual todos los eventos de agenda quedan bloqueados:
+
+$$\lambda_{i,h}^{ef}(t) = \begin{cases} \lambda_{i,h} & t \in [t_{día},\, t_{noche}] \\ 0 & t \in [t_{noche},\, t_{día}] \end{cases}$$
+
+con $t_{noche}$ y $t_{día}$ parámetros globales (por defecto 23:00 y 07:00). Esto garantiza que todos los agentes estén en hogar durante la noche sin necesidad de modelar el sueño explícitamente.
+
+**Transmisión doméstica.** Los convivientes $\mathcal{F}_k$ comparten posición $\mathbf{h}_k$ durante las horas en hogar. El campo ambiental local $D_j(t)$ se evalúa en $\mathbf{h}_k$, acumulando el inóculo emitido por cualquier conviviente infectado. La transmisión doméstica no requiere ningún mecanismo adicional — emerge del campo continuo con la emisión escalada por:
+
+$$\rho_{hogar} \geq 1$$
+
+El factor $\rho_{hogar} > 1$ refleja que el espacio cerrado y la exposición prolongada producen concentraciones de inóculo mayores que en cualquier hub público. En términos relativos, $\rho_{hogar}$ normaliza la escala de $\rho_h$ de los otros hubs: fijar $\rho_{hogar} = 1$ y $\rho_h < 1$ para todos los hubs públicos es equivalente y más interpretable.
+
+**Cuarentena doméstica y su paradoja.** Cuando un agente entra en estado de cuarentena ($Q_i = 1$, Parte VIII.B.1), se fija permanentemente en $\mathbf{h}_{k(i)}$ con todos sus eventos de agenda cancelados. Esto elimina la transmisión en hubs pero *mantiene* la exposición de los convivientes $\mathcal{F}_k$, que siguen compartiendo el campo ambiental del hogar. La cuarentena doméstica es efectiva para el exterior y contraproducente para el interior del hogar — un resultado que el modelo reproduce sin parametrización adicional y que es consistente con la evidencia observacional de COVID-19.
+
+**Parámetros introducidos:**
+
+| Parámetro | Símbolo | Rango típico |
+|---|---|---|
+| Número de hogares | $N_{hog}$ | $[N/5,\, N/2]$ |
+| Distribución de tamaño de hogar | $\mathbf{p}_{tam}$ | Calibrar desde censo |
+| Inicio del bloque nocturno | $t_{noche}$ | 22:00–24:00 |
+| Fin del bloque nocturno | $t_{día}$ | 06:00–08:00 |
+| Factor de emisión doméstica | $\rho_{hogar}$ | $[1.0, 3.0]$ |
+
+---
 
 #### VIII.A.1 Puntos de Atracción Central (Hubs) — Enfoque Continuo
 
@@ -600,6 +644,16 @@ $\hat{R}_{ef}(t)$ es la métrica canónica para evaluar si una intervención (cu
 | Umbral de inhibición motora | V_sint | [0.3, 0.7] | Carga viral al 50% de inhibición de D_esp |
 | Exponente de Hill (inhibición motora) | n_mov | [1, 4] | Agudeza de inhibición cinemática |
 | Dosis máxima de infección | τ_max | Variable por virus | Dosis máxima acumulada; τᵢ = ωᵢₙ,ᵢ · τ_max |
+
+### Tabla de Parámetros — Extensiones (Parte VIII)
+
+| Parámetro | Símbolo | Rango típico | Sección |
+|---|---|---|---|
+| Número de hogares | $N_{hog}$ | $[N/5, N/2]$ | VIII.A.0 |
+| Distribución de tamaño de hogar | $\mathbf{p}_{tam}$ | Desde censo | VIII.A.0 |
+| Inicio del bloque nocturno | $t_{noche}$ | 22:00–24:00 | VIII.A.0 |
+| Fin del bloque nocturno | $t_{día}$ | 06:00–08:00 | VIII.A.0 |
+| Factor de emisión doméstica | $\rho_{hogar}$ | $[1.0, 3.0]$ | VIII.A.0 |
 | Número de hubs | H | [1, 20] | VIII.A.1 |
 | Tasa de visita del agente $i$ al hub $h$ | $\lambda_{i,h}$ | [0, 5] visitas/día | VIII.A.1 |
 | Forma de la distribución de estadía en hub $h$ | $\alpha_h$ | [1, 10] | VIII.A.1 |

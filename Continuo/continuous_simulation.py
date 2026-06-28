@@ -152,15 +152,12 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                         # Sample stay duration
                         self.remaining_visit_time[i, dest] = np.random.gamma(self.hubs_alpha[dest], self.hubs_beta[dest])
             
-            # Night abort transit: if heading to hub and it's night, immediately abort and lock to home
+            # Night abort transit: if heading to hub and it's night, redirect them back home
             if is_night:
                 abort_mask = mask_in_transit & (self.transit_destination_hub >= 0)
                 if np.any(abort_mask):
-                    self.motion_state[abort_mask] = 0
-                    self.coord_x[abort_mask] = self.home_coords[abort_mask, 0]
-                    self.coord_y[abort_mask] = self.home_coords[abort_mask, 1]
-                    self.remaining_transit_time[abort_mask] = 0.0
                     self.transit_destination_hub[abort_mask] = -1
+                    self.remaining_transit_time[abort_mask] = self.T_transito
 
         # Visit triggers for agents at home (motion_state == 0) and not quarantined, not dead
         if not is_night and self.H > 0:
