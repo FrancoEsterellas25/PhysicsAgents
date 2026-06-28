@@ -40,6 +40,7 @@ W2 = 0.7                 # Peso del tiempo crónico de enfermedad
 CALIDAD = 'l'            # Calidades: 'l' (Low), 'm' (Medium), 'h' (High)
 ABRIR_VIDEO_AL_TERMINAR = True
 VELOCIDAD_REPRODUCCION = 50.0 # Pasos dt por segundo (velocidad de los frames)
+RENDERIZAR_MANIM = True  # ponytail: set to False to skip slow Manim video render and only generate Plotly HTML
 
 # 5. PARÁMETROS DE LAS EXTENSIONES (PARTE VIII)
 HUBS_ACTIVOS = True
@@ -128,6 +129,11 @@ def main():
         print(f" Error generando animación Plotly: {e}\n")
     
     # 2. Configurar el renderizado visual de Manim
+    if not RENDERIZAR_MANIM:
+        print("\n[INFO] RENDERIZAR_MANIM está configurado en False. Saltando el renderizado de Manim...")
+        print("Trayectorias de agentes generadas y dashboard interactivo de Plotly compilado con éxito.\n")
+        return
+        
     print("===================================================")
     print(f" INICIANDO RENDERIZADO VISUAL EN CALIDAD '{CALIDAD.upper()}'")
     print("===================================================")

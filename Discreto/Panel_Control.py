@@ -41,6 +41,7 @@ W2 = 0.4                 # Peso del tiempo crónico de enfermedad en el estrés
 # 'h' (High - 1080p) -> Alta calidad HD
 CALIDAD = 'l'            
 ABRIR_VIDEO_AL_TERMINAR = True
+RENDERIZAR_MANIM = True  # ponytail: set to False to skip slow Manim video render and only generate Plotly HTML
 
 # 5. PARÁMETROS DE LAS EXTENSIONES (PARTE VIII)
 T_TRIGGER_INTERVENCION = 10.0  # Día en que se activan cuarentenas/distanciamiento
@@ -104,6 +105,11 @@ def main():
         print(f" Error generando animación Plotly: {e}\n")
     
     # 2. Configurar el renderizado visual de Manim
+    if not RENDERIZAR_MANIM:
+        print("\n[INFO] RENDERIZAR_MANIM está configurado en False. Saltando el renderizado de Manim...")
+        print("Trayectorias de agentes generadas y dashboard interactivo de Plotly compilado con éxito.\n")
+        return
+        
     print("===================================================")
     print(f" INICIANDO RENDERIZADO VISUAL EN CALIDAD '{CALIDAD.upper()}'")
     print("===================================================")
