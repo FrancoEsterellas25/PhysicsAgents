@@ -245,9 +245,13 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         
         # 2. STATE MACHINE UPDATES
         # Force quarantined agents home
-        self.motion_state[self.quarantined] = 0
-        self.remaining_transit_time[self.quarantined] = 0.0
-        self.transit_destination_hub[self.quarantined] = -1
+        mask_q = self.quarantined
+        if np.any(mask_q):
+            self.motion_state[mask_q] = 0
+            self.remaining_transit_time[mask_q] = 0.0
+            self.transit_destination_hub[mask_q] = -1
+            self.coord_x[mask_q] = self.home_coords[mask_q, 0]
+            self.coord_y[mask_q] = self.home_coords[mask_q, 1]
         
         # Lock deceased agents home
         mask_dead = (self.state == self.D)
