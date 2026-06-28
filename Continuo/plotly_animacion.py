@@ -229,7 +229,7 @@ def main():
             else:
                 color_val = "White"
                 
-            if htipo == "agenda":
+            if htipo == "agenda" and "Centro" not in name:
                 fig.add_shape(
                     type="rect",
                     xref="x1", yref="y1",

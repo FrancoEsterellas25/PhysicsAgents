@@ -137,15 +137,15 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             hubs_names.append(f"Supermercado {h-S-W+1}" if M > 1 else "Supermercado")
             hubs_colors.append("Cyan")
             
-        # 4. El Centro (Gravitational - Open)
+        # 4. El Centro (Agenda - Open)
         h_centro = S + W + M
         self.hubs_coords[h_centro] = [center_x, center_y]
-        self.hubs_types.append("gravitatorio")
-        self.hubs_lambda[h_centro] = 0.0
-        self.hubs_alpha[h_centro] = 0.0
-        self.hubs_beta[h_centro] = 0.0
-        self.hubs_kappa[h_centro] = 2.5
-        self.hubs_ell[h_centro] = 10.0
+        self.hubs_types.append("agenda")
+        self.hubs_lambda[h_centro] = 0.4                  # visits frequency (0.4 visits/day)
+        self.hubs_alpha[h_centro] = 4.0                   # Gamma shape parameter for stay
+        self.hubs_beta[h_centro] = 0.25 / 24.0            # Gamma scale parameter for stay (1.0 hour)
+        self.hubs_kappa[h_centro] = 0.0
+        self.hubs_ell[h_centro] = 0.0
         self.hubs_rho[h_centro] = 1.0
         self.hubs_is_closed[h_centro] = False
         hubs_names.append("El Centro")
