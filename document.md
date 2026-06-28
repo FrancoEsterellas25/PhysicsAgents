@@ -377,6 +377,8 @@ donde ε > 0 representa la siembra viral inicial. El resto de la población mant
 
 ---
 
+---
+
 ## Parte VIII: Extensiones Estructurales y Experimentos Canónicos
 
 Esta sección formaliza dos ejes de extensión del modelo base: la introducción de **movilidad estructurada** (puntos de atracción y multiparche) y el **análisis de intervenciones de política sanitaria** (cuarentena con falla asintomática, distancia social). Cada extensión se define en términos del modelo existente, explicita qué parámetros modifica y propone el experimento canónico que la valida.
@@ -385,7 +387,18 @@ Esta sección formaliza dos ejes de extensión del modelo base: la introducción
 
 ### VIII.A — Movilidad Estructurada
 
-La movilidad de los agentes se organiza en torno a una jerarquía de tres niveles: el **hogar** (estado default, residencia permanente), los **hubs de agenda** (destinos sistemáticos con frecuencia y duración propias) y los **hubs gravitatorios** (zonas de atracción pasiva). Esta jerarquía tiene precedencia estricta: la agenda suspende la difusión; el hogar es el estado al que se regresa cuando no hay ningún evento activo.
+La movilidad de los agentes se organiza en torno a una jerarquía de cuatro tipos de espacio, que difieren no solo en frecuencia y duración de visita sino en la **composición del grupo de co-presentes** — la variable epidemiológicamente determinante:
+
+| Tipo | Grupo co-presentes | $\lambda_{i,h}$ | $\kappa_h$ | Ejemplo |
+|---|---|---|---|---|
+| Residencial | Fijo (convivientes) | — | 0 | Hogar |
+| Cerrado | Fijo (colegas, compañeros) | Alto | 0 | Trabajo, escuela |
+| Abierto | Aleatorio (población general) | Moderado | 0 | Supermercado, transporte |
+| Gravitatorio | Aleatorio (población general) | 0 | Alto | Plaza, centro histórico |
+
+La distinción entre grupo fijo y aleatorio tiene consecuencias estructurales irreducibles a los parámetros de frecuencia y duración. Los hubs de grupo **cerrado** generan clusters saturables: una vez que el grupo está todo infectado o recuperado, el hub deja de ser vector activo. Los hubs de grupo **abierto** generan puentes entre clusters: conectan en cada visita subgrafos que de otro modo no tendrían contacto, acelerando la propagación a escala poblacional incluso cuando cada cluster individual está bajo control local. Esta es la diferencia entre $R_{ef}$ local (dentro del cluster) y $R_{ef}$ global (entre clusters).
+
+La jerarquía tiene precedencia estricta: la agenda suspende la difusión; el hogar es el estado al que se regresa cuando no hay ningún evento activo.
 
 ---
 
@@ -429,20 +442,28 @@ El factor $\rho_{hogar} > 1$ refleja que el espacio cerrado y la exposición pro
 
 #### VIII.A.1 Puntos de Atracción Central (Hubs) — Enfoque Continuo
 
-El modelo de movimiento browniano isotrópico de la Parte IV §4 captura difusión residencial pero no la estructura de la movilidad humana real, que combina dos fenómenos cualitativamente distintos: visitas sistemáticas con agenda propia (escuela, trabajo, supermercado) y atracción gravitatoria pasiva hacia nodos densos de la ciudad (centro histórico, plaza principal). Estos dos mecanismos coexisten y requieren operadores separados.
+El modelo de movimiento browniano isotrópico de la Parte IV §4 captura difusión residencial pero no la estructura de la movilidad humana real, que combina visitas sistemáticas con agenda propia y atracción gravitatoria pasiva hacia nodos densos. Estos mecanismos coexisten y requieren operadores separados. La taxonomía completa está en la introducción de VIII.A; aquí se formalizan los operadores.
 
-**Taxonomía de hubs.** Se introduce un conjunto de $H$ hubs fijos $\{\mathbf{c}_h\}_{h=1}^H$, cada uno caracterizado por dos parámetros independientes:
+**Parámetro de composición de grupo.** Cada hub $h$ tiene asignado un tipo de grupo:
 
-- $\lambda_{i,h} \geq 0$: tasa de visita agendada del agente $i$ al hub $h$ (visitas por unidad de tiempo). Cero si el agente no tiene agenda en ese hub.
-- $\kappa_h \geq 0$: masa gravitatoria del hub, que controla la intensidad de la atracción pasiva sobre todos los agentes en el dominio.
+$$\text{tipo}_h \in \{\text{cerrado},\, \text{abierto}\}$$
 
-Esto produce tres arquetipos naturales:
+Para hubs cerrados, cada agente $i$ pertenece a un grupo fijo $G_{i,h}$ (análogo a `hogar_id` pero para el hub). El campo ambiental durante la visita se evalúa únicamente entre miembros de $G_{i,h}$ co-presentes en $\mathbf{c}_h$. Para hubs abiertos, el campo se evalúa entre todos los agentes presentes en $\mathbf{c}_h$ en ese instante, independientemente de su identidad — el conjunto de co-presentes varía en cada visita.
 
-| Tipo | $\lambda_{i,h}$ | $\kappa_h$ | Ejemplo |
-|---|---|---|---|
-| Agenda pura | Alto | 0 | Escuela, trabajo |
-| Gravitatorio puro | 0 | Alto | Centro histórico, plaza |
-| Mixto | Moderado | Moderado | Supermercado |
+En implementación:
+
+```
+hub_group_id[i, h]  # entero fijo si hub cerrado; None si hub abierto
+```
+
+**Cuarentena en hub cerrado.** Cuando un agente de grupo cerrado entra en $Q_i = 1$, su ausencia permanente del hub reduce el tamaño efectivo del grupo expuesto. A diferencia de la cuarentena doméstica (que mantiene la transmisión intrahogar), la cuarentena en hub cerrado es neta: el grupo $G_{i,h} \setminus \{i\}$ queda con un miembro menos en exposición mutua. Si el agente en cuarentena era el único infectado del grupo, el hub cerrado queda efectivamente saneado.
+
+**Parámetros de hub:**
+
+- $\lambda_{i,h} \geq 0$: tasa de visita agendada (visitas por unidad de tiempo). Cero si el agente no tiene agenda en ese hub.
+- $\kappa_h \geq 0$: masa gravitatoria. Cero para hubs de agenda pura.
+- $\text{tipo}_h$: composición de grupo (cerrado / abierto).
+- $G_{i,h}$: identificador de grupo fijo (solo hubs cerrados).
 
 ---
 
@@ -655,6 +676,8 @@ $\hat{R}_{ef}(t)$ es la métrica canónica para evaluar si una intervención (cu
 | Fin del bloque nocturno | $t_{día}$ | 06:00–08:00 | VIII.A.0 |
 | Factor de emisión doméstica | $\rho_{hogar}$ | $[1.0, 3.0]$ | VIII.A.0 |
 | Número de hubs | H | [1, 20] | VIII.A.1 |
+| Tipo de grupo del hub $h$ | $\text{tipo}_h$ | cerrado / abierto | VIII.A.1 |
+| Identificador de grupo fijo del agente $i$ en hub $h$ | $G_{i,h}$ | entero (hubs cerrados) | VIII.A.1 |
 | Tasa de visita del agente $i$ al hub $h$ | $\lambda_{i,h}$ | [0, 5] visitas/día | VIII.A.1 |
 | Forma de la distribución de estadía en hub $h$ | $\alpha_h$ | [1, 10] | VIII.A.1 |
 | Escala de la distribución de estadía en hub $h$ | $\beta_h$ | [0.1, 2.0] h | VIII.A.1 |

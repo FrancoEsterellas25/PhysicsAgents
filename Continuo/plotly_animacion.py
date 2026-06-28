@@ -96,12 +96,12 @@ def main():
         row=1, col=1
     )
         
-    # Trace 6-10: Stacked Area curves (one per state)
+    # Trace 6-10: Stacked Area curves (one per state) - Rendered statically for reliability
     for s in states:
-        y_val = 100.0 * historico_conteos[0:1, s] / N
+        y_val = 100.0 * historico_conteos[:, s] / N
         fig.add_trace(
             go.Scatter(
-                x=tiempos[0:1],
+                x=tiempos,
                 y=y_val,
                 mode="lines",
                 stackgroup="one",
@@ -115,7 +115,7 @@ def main():
             row=1, col=2
         )
 
-    # 3. Build Animation Frames
+    # 3. Build Animation Frames (Animating only Trace 5 for maximum WebGL speed and reliability)
     frames = []
     for t_idx, t_val in enumerate(tiempos):
         df_t = df_dinamico.filter(pl.col("tiempo") == t_val)
@@ -128,14 +128,8 @@ def main():
         x_t_plot[mask_home_t] += jitter_x[mask_home_t]
         y_t_plot[mask_home_t] += jitter_y[mask_home_t]
         
-        frame_data = []
-        
-        # Legend dummies (Traces 0-4) - stay empty
-        for s in states:
-            frame_data.append(go.Scatter(x=[None], y=[None], xaxis="x", yaxis="y"))
-            
-        # Agent coordinates and updated state colors (Trace 5)
-        frame_data.append(
+        # We only pass a single trace update for Trace 5
+        frame_data = [
             go.Scatter(
                 x=x_t_plot,
                 y=y_t_plot,
@@ -144,22 +138,9 @@ def main():
                 xaxis="x",
                 yaxis="y"
             )
-        )
+        ]
             
-        # Stacked curves history (Traces 6-10)
-        for s in states:
-            y_val = 100.0 * historico_conteos[0:t_idx+1, s] / N
-            frame_data.append(
-                go.Scatter(
-                    x=tiempos[0:t_idx+1],
-                    y=y_val,
-                    xaxis="x2",
-                    yaxis="y2"
-                )
-            )
-            
-        # ponytail: specify traces index list explicitly to ensure subplot trace update binding
-        frames.append(go.Frame(data=frame_data, name=f"dia_{t_val:.1f}", traces=list(range(11))))
+        frames.append(go.Frame(data=frame_data, name=f"dia_{t_val:.1f}", traces=[5]))
 
     fig.frames = frames
 
