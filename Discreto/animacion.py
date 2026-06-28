@@ -2,8 +2,7 @@ from manim import *
 import polars as pl
 import numpy as np
 
-# Forzar el renderizado a 2 FPS por defecto para no perder información en los saltos de 0.5s
-config.frame_rate = 2
+# ponytail: allow Manim to use default/configured frame rates (15/30/60) for smooth playback
 
 class EscenaEpidemiologica(Scene):
     def construct(self):
@@ -139,22 +138,24 @@ class EscenaEpidemiologica(Scene):
             textos_conteo.append(t)
             self.add(t)
 
-        # Ejes para Plotear curvas
+        # Ejes para Plotear curvas (porcentaje 0% a 100%)
         axes = Axes(
             x_range=[0, max(10, T_max), max(1, T_max//5)],
-            y_range=[0, N, max(1, N//4)],
+            y_range=[0, 100, 25],
             x_length=5.5,
             y_length=3.0,
             axis_config={"color": WHITE, "font_size": 14}
         ).move_to([dash_x, -1.5, 0])
         self.add(axes)
+        y_label = Text("%", font_size=14).next_to(axes.y_axis, UP, buff=0.1)
+        self.add(y_label)
         
         # Precomputar todo el historial para dibujar
         historico_conteos = np.zeros((T_max, 5))
         for t in range(T_max):
             historico_conteos[t] = np.bincount(estados_matrix[t], minlength=5)
             
-        curvas = [VMobject(color=COLOR_MAP[i], stroke_width=3) for i in range(5)]
+        curvas = [VMobject(fill_color=COLOR_MAP[i], fill_opacity=0.8, stroke_width=0.5, stroke_color=COLOR_MAP[i]) for i in range(5)]
         for c in curvas:
             self.add(c)
 
@@ -164,51 +165,58 @@ class EscenaEpidemiologica(Scene):
         
         # Inicializar puntos en frame 0
         for idx_c in range(5):
-            curvas[idx_c].set_points_as_corners([axes.c2p(0, historico_conteos[0, idx_c]), axes.c2p(0, historico_conteos[0, idx_c])])
+            curvas[idx_c].set_points_as_corners([axes.c2p(0, 0.0), axes.c2p(0, 0.0), axes.c2p(0, 0.0)])
+
+        # ponytail: adapt wait times to match target frame rate (15 steps/sec)
+        steps_per_second = 15.0
+        frames_per_step = max(1, int(config.frame_rate / steps_per_second))
+        wait_time = 1.0 / config.frame_rate
 
         for t_idx in range(1, T_max):
             estado_actual = estados_matrix[t_idx]
             carga_actual = viral_matrix[t_idx]
             
-            # Actualizar Grilla (Solo celdas modificadas para O(1))
-            cambios_mask = (estado_actual != estado_previo)
-            infectados_mask = (estado_actual == 2)
-            
-            indices_actualizar = np.where(cambios_mask | infectados_mask)[0]
-            for i in indices_actualizar:
-                est = estado_actual[i]
-                color_celda = COLOR_MAP[est]
-                
-                opacidad = 1.0
-                if est == 2:
-                    opacidad = float(np.clip(carga_actual[i] / 10.0, 0.8, 1.0))
-                elif est == 4:
-                    opacidad = 0.3
+            for f in range(1, frames_per_step + 1):
+                if f == frames_per_step:
+                    # Actualizar Grilla (Solo celdas modificadas para O(1))
+                    cambios_mask = (estado_actual != estado_previo)
+                    infectados_mask = (estado_actual == 2)
                     
-                celdas[i].set_fill(color_celda, opacity=opacidad)
-                
-            estado_previo = np.copy(estado_actual)
+                    indices_actualizar = np.where(cambios_mask | infectados_mask)[0]
+                    for i in indices_actualizar:
+                        est = estado_actual[i]
+                        color_celda = COLOR_MAP[est]
+                        
+                        opacidad = 1.0
+                        if est == 2:
+                            opacidad = float(np.clip(carga_actual[i] / 10.0, 0.8, 1.0))
+                        elif est == 4:
+                            opacidad = 0.3
+                            
+                        celdas[i].set_fill(color_celda, opacity=opacidad)
+                        
+                    estado_previo = np.copy(estado_actual)
 
-            # Actualizar Textos
-            conteo_actual = historico_conteos[t_idx]
-            
-            nuevo_dia = Text(f"Día: {t_idx}", font_size=24, color=YELLOW).move_to([dash_x, 3.0, 0])
-            dia_text.become(nuevo_dia)
-            
-            for idx in range(5):
-                nuevo_t = Text(f"{labels[idx]}: {int(conteo_actual[idx])}", font_size=18, color=COLOR_MAP[idx])
-                nuevo_t.move_to([dash_x, y_pos_labels[idx], 0], aligned_edge=LEFT)
-                nuevo_t.shift(LEFT * 1.5)
-                textos_conteo[idx].become(nuevo_t)
-                
-            # Actualizar Curvas del Gráfico Frame a Frame
-            for idx in range(5):
-                # Genera los vértices hasta el día actual
-                pts = [axes.c2p(t, historico_conteos[t, idx]) for t in range(t_idx + 1)]
-                curvas[idx].set_points_as_corners(pts)
+                    # Actualizar Textos
+                    conteo_actual = historico_conteos[t_idx]
+                    
+                    nuevo_dia = Text(f"Día: {t_idx}", font_size=24, color=YELLOW).move_to([dash_x, 3.0, 0])
+                    dia_text.become(nuevo_dia)
+                    
+                    for idx in range(5):
+                        nuevo_t = Text(f"{labels[idx]}: {int(conteo_actual[idx])}", font_size=18, color=COLOR_MAP[idx])
+                        nuevo_t.move_to([dash_x, y_pos_labels[idx], 0], aligned_edge=LEFT)
+                        nuevo_t.shift(LEFT * 1.5)
+                        textos_conteo[idx].become(nuevo_t)
+                        
+                    # Actualizar Curvas del Gráfico Frame a Frame
+                    for idx in range(5):
+                        pts_lower = [axes.c2p(t, 100.0 * np.sum(historico_conteos[t, :idx]) / N) for t in range(t_idx + 1)]
+                        pts_upper = [axes.c2p(t, 100.0 * np.sum(historico_conteos[t, :idx+1]) / N) for t in range(t_idx + 1)]
+                        pts_upper.reverse()
+                        vertices = pts_lower + pts_upper + [pts_lower[0]]
+                        curvas[idx].set_points_as_corners(vertices)
 
-            # Pausa para este fotograma
-            self.wait(0.5)
+                self.wait(wait_time)
             
-        # Pausa final al terminar la simulación
         self.wait(2.0)

@@ -18,10 +18,10 @@ GRID_ROWS = 40
 TOPOLOGIA = 'hexagonal'  # Opciones: 'hexagonal', 'moore', 'von_neumann'
 DIAS_SIMULACION = 60
 SEMILLA_INICIAL = 42
-AGENTES_INFECTADOS_INICIALES = 600
+AGENTES_INFECTADOS_INICIALES = 16 # ponytail: reduced initial seed to 1% of population (16 out of 1600)
 
 # 2. PARÁMETROS DEL ENFOQUE DISCRETO (Mecanismo de Contagio - Función de Hill)
-V_50_BASAL = 3.0         # Carga viral base para 50% de probabilidad de infección
+V_50_BASAL = 1.5         # ponytail: lowered from 3.0 to compensate for lower initial seed and allow transmission
 GAMMA_HILL = 1.5         # Importancia de la barrera innata
 N_HILL = 2.0             # Agudeza de la curva sigmoide de transmisión
 K_E = 2                  # Etapas de incubación (Binomial Negativa)

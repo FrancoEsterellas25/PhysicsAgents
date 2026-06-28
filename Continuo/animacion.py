@@ -3,8 +3,7 @@ import polars as pl
 import numpy as np
 from pathlib import Path
 
-# Configuración del renderizado (2 FPS para no perder transiciones)
-config.frame_rate = 2
+# ponytail: allow Manim to use default/configured frame rates (15/30/60) for smooth playback
 
 class EscenaEpidemiologicaContinuo(Scene):
     def construct(self):
@@ -102,17 +101,20 @@ class EscenaEpidemiologicaContinuo(Scene):
         # Ejes para las curvas de evolución (eje X en días físicos reales)
         axes = Axes(
             x_range=[0, float(tiempos[-1]), max(1.0, float(tiempos[-1])/5.0)],
-            y_range=[0, N, max(1, N//4)],
+            y_range=[0, 100, 25],
             x_length=5.5,
             y_length=3.0,
             axis_config={"color": WHITE, "font_size": 14}
         ).move_to([dash_x, -1.5, 0])
         self.add(axes)
+        y_label = Text("%", font_size=14).next_to(axes.y_axis, UP, buff=0.1)
+        self.add(y_label)
         
-        curvas = [VMobject(color=COLOR_MAP[i], stroke_width=3) for i in range(5)]
+        curvas = [VMobject(fill_color=COLOR_MAP[i], fill_opacity=0.8, stroke_width=0.5, stroke_color=COLOR_MAP[i]) for i in range(5)]
         for idx_c, c in enumerate(curvas):
             self.add(c)
-            c.set_points_as_corners([axes.c2p(0.0, conteo_t0[idx_c]), axes.c2p(0.0, conteo_t0[idx_c])])
+            # ponytail: initialize closed polygon at origin
+            c.set_points_as_corners([axes.c2p(0.0, 0.0), axes.c2p(0.0, 0.0), axes.c2p(0.0, 0.0)])
 
         # Precomputar conteos históricos para optimizar curvas (filtrando por valor real de tiempo)
         historico_conteos = np.zeros((T_max, 5))
@@ -122,45 +124,67 @@ class EscenaEpidemiologicaContinuo(Scene):
             historico_conteos[t_idx] = np.bincount(estados_t, minlength=5)
 
         # 5. BUCLE DE ANIMACIÓN
+        # ponytail: adapt sub-frames to target frame rate for smooth movement interpolation
+        steps_per_second = 15.0
+        frames_per_step = max(1, int(config.frame_rate / steps_per_second))
+        wait_time = 1.0 / config.frame_rate
+
         for t_idx in range(1, T_max):
             t_val = tiempos[t_idx]
+            t_prev = tiempos[t_idx - 1]
+            
+            df_prev = df_dinamico.filter(pl.col("tiempo") == t_prev)
+            x_prev = df_prev["coord_x"].to_numpy()
+            y_prev = df_prev["coord_y"].to_numpy()
+            estado_prev = df_prev["estado"].to_numpy()
+            carga_prev = df_prev["carga_viral"].to_numpy()
+            
             df_t = df_dinamico.filter(pl.col("tiempo") == t_val)
             x_t = df_t["coord_x"].to_numpy()
             y_t = df_t["coord_y"].to_numpy()
             estado_t = df_t["estado"].to_numpy()
             carga_t = df_t["carga_viral"].to_numpy()
             
-            # Actualizar posiciones y colores de los agentes
-            for i in range(N):
-                pos = mapear_posicion(x_t[i], y_t[i])
-                agentes_mobjects[i].move_to(pos)
-                
-                est = estado_t[i]
-                color = COLOR_MAP[est]
-                opacidad = 1.0
-                if est == 2:
-                    opacidad = float(np.clip(carga_t[i] / 10.0, 0.7, 1.0))
-                elif est == 4:
-                    opacidad = 0.3
-                    
-                agentes_mobjects[i].set_fill(color, opacity=opacidad)
-
-            # Actualizar textos del Dashboard
             conteo_actual = historico_conteos[t_idx]
-            nuevo_dia = Text(f"Día: {t_val:.1f}", font_size=24, color=YELLOW).move_to([dash_x, 3.0, 0])
-            dia_text.become(nuevo_dia)
             
-            for idx in range(5):
-                nuevo_t = Text(f"{labels[idx]}: {int(conteo_actual[idx])}", font_size=18, color=COLOR_MAP[idx])
-                nuevo_t.move_to([dash_x, y_pos_labels[idx], 0], aligned_edge=LEFT)
-                nuevo_t.shift(LEFT * 1.5)
-                textos_conteo[idx].become(nuevo_t)
+            for f in range(1, frames_per_step + 1):
+                alpha = f / frames_per_step
+                x_interp = (1.0 - alpha) * x_prev + alpha * x_t
+                y_interp = (1.0 - alpha) * y_prev + alpha * y_t
                 
-            # Actualizar Curvas usando la coordenada de tiempo física real
-            for idx in range(5):
-                pts = [axes.c2p(tiempos[time_step], historico_conteos[time_step, idx]) for time_step in range(t_idx + 1)]
-                curvas[idx].set_points_as_corners(pts)
+                for i in range(N):
+                    pos = mapear_posicion(x_interp[i], y_interp[i])
+                    agentes_mobjects[i].move_to(pos)
+                    
+                    est = estado_t[i] if alpha >= 0.5 else estado_prev[i]
+                    carga = carga_t[i] if alpha >= 0.5 else carga_prev[i]
+                    color = COLOR_MAP[est]
+                    opacidad = 1.0
+                    if est == 2:
+                        opacidad = float(np.clip(carga / 10.0, 0.7, 1.0))
+                    elif est == 4:
+                        opacidad = 0.3
+                        
+                    agentes_mobjects[i].set_fill(color, opacity=opacidad)
 
-            self.wait(0.5)
+                dia_text_val = t_prev + alpha * (t_val - t_prev)
+                nuevo_dia = Text(f"Día: {dia_text_val:.1f}", font_size=24, color=YELLOW).move_to([dash_x, 3.0, 0])
+                dia_text.become(nuevo_dia)
+                
+                if f == frames_per_step:
+                    for idx in range(5):
+                        nuevo_t = Text(f"{labels[idx]}: {int(conteo_actual[idx])}", font_size=18, color=COLOR_MAP[idx])
+                        nuevo_t.move_to([dash_x, y_pos_labels[idx], 0], aligned_edge=LEFT)
+                        nuevo_t.shift(LEFT * 1.5)
+                        textos_conteo[idx].become(nuevo_t)
+                        
+                    for idx in range(5):
+                        pts_lower = [axes.c2p(tiempos[time_step], 100.0 * np.sum(historico_conteos[time_step, :idx]) / N) for time_step in range(t_idx + 1)]
+                        pts_upper = [axes.c2p(tiempos[time_step], 100.0 * np.sum(historico_conteos[time_step, :idx+1]) / N) for time_step in range(t_idx + 1)]
+                        pts_upper.reverse()
+                        vertices = pts_lower + pts_upper + [pts_lower[0]]
+                        curvas[idx].set_points_as_corners(vertices)
+                        
+                self.wait(wait_time)
 
         self.wait(2.0)

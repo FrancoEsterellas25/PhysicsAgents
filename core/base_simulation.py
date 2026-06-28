@@ -77,6 +77,19 @@ class BaseSEIRSDSimulation:
             'estado': [],
             'carga_viral': []
         }
+        
+        # ponytail: Part VIII Intervention and tracking parameters
+        self.t_trigger = 999.0   # Intervention activation time threshold
+        self.p_Q = 1.0           # Quarantine compliance/efficiency
+        self.v_sint = 0.5        # Clinical symptomatic detection threshold
+        self.quarantined = np.zeros(self.N, dtype=bool)
+        
+        self.C_DS = 0.0          # Population level social distance compliance
+        self.c_DS = np.zeros(self.N, dtype=np.float32)
+        
+        # Generation tracking for R_ef
+        self.infected_by = np.full(self.N, -1, dtype=np.int32)
+        self.infections_caused = np.zeros(self.N, dtype=np.int32)
 
     def _fase0_inicializacion(self, output_dir=None):
         """Inicializa perfiles inmunes correlacionados y exporta el mapa estático."""
@@ -87,6 +100,13 @@ class BaseSEIRSDSimulation:
         )
         self.auc_norm_factor = self.v_peak_base * self.tau_max
         self.k_R, self.p_R = resolver_negbin_params(self.mu_R, self.M_R)
+        
+        # ponytail: sample compliance and reset state tracking
+        np.random.seed(42)  # Maintain reproducibility for compliance seeding
+        self.c_DS = np.random.binomial(1, self.C_DS, self.N).astype(np.float32)
+        self.quarantined.fill(False)
+        self.infected_by.fill(-1)
+        self.infections_caused.fill(0)
         
         # Si se provee output_dir, exportamos mapa_estatico.parquet
         if output_dir is not None:
@@ -200,6 +220,20 @@ class BaseSEIRSDSimulation:
         ready_to_S = mask_R & (self.time_in_R <= 0.0)
         self.state[ready_to_S] = self.S
         self.time_in_R[mask_R & ~ready_to_S] -= self.dt
+        
+        # ponytail: quarantine operator evaluated for active infected agents (t >= t_trigger)
+        if t is not None and t >= self.t_trigger:
+            mask_active_I = (self.state == self.I) & ~self.quarantined
+            if np.any(mask_active_I):
+                sintomatico = (self.viral_load >= self.v_sint)
+                # Quarantine probability is (1 - A_i) * p_Q = sintomatico * p_Q
+                prob_q = np.where(sintomatico, self.p_Q, 0.0)
+                quarantine_check = (np.random.rand(self.N) < prob_q) & mask_active_I
+                self.quarantined[quarantine_check] = True
+                
+        # Release recovered/deceased from quarantine
+        self.quarantined[self.state == self.R] = False
+        self.quarantined[self.state == self.D] = False
 
     def _fase4_congelamiento(self):
         """Fuerza invariantes físicas sobre el estado D."""
@@ -252,3 +286,19 @@ class BaseSEIRSDSimulation:
             print(f"Exportado {path_dir / 'telemetria_dinamica.parquet'} (Orden estricto validado)")
             
         return df_dinamico
+
+    def get_effective_r(self, t):
+        """Calcula el número reproductivo efectivo R_ef(t) para el paso de tiempo actual."""
+        mask_I = (self.state == self.I)
+        if not np.any(mask_I):
+            return 0.0
+            
+        tau = t - self.t_inf[mask_I]
+        # ponytail: prevent negative values if t is slightly off
+        tau = np.maximum(0.0, tau)
+        p_surv = np.exp(-self.alpha * tau)
+        p_rec = 1.0 - p_surv
+        c_fut = self.infections_caused[mask_I] * (p_surv / (p_rec + 1e-5))
+        
+        r_eff_individual = self.infections_caused[mask_I] + c_fut
+        return float(np.mean(r_eff_individual))

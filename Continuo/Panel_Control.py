@@ -14,10 +14,10 @@ from continuous_simulation import ContinuousSEIRSDSimulation
 
 # 1. PARÁMETROS DEL ESPACIO FÍSICO Y SIMULACIÓN
 N_AGENTES = 500
-L_ESPACIO = 20.0          # L=20 aumenta la densidad para lograr contagio realista
+L_ESPACIO = 50.0          # ponytail: increased L to 50.0 to reduce density (sparse spatial contacts)
 DIAS_SIMULACION = 30      # Duración física real de la simulación en días
 SEMILLA_INICIAL = 42
-AGENTES_INFECTADOS_INICIALES = 10
+AGENTES_INFECTADOS_INICIALES = 5 # ponytail: reduced initial seed to 1% of population
 PASO_TIEMPO_DT = 0.1      # dt=0.1 representa 2.4 horas por paso de simulación
 
 # 2. PARÁMETROS ESPECÍFICOS DEL ENFOQUE CONTINUO
@@ -29,7 +29,7 @@ V_SINTOMAS = 0.5          # Carga viral al 50% de inhibición motora
 EXPO_N_MOV = 2.0          # Agudeza de inhibición cinemática
 
 # 3. PARÁMETROS CLÍNICOS DEL NÚCLEO BIOLÓGICO
-TAU_MAX = 2.0            # Umbral de tolerancia de dosis máxima (reducido para L=20)
+TAU_MAX = 0.5            # ponytail: reduced to 0.5 to compensate for lower density and allow spread
 MU_R = 180.0             # Media de días de inmunidad tras recuperación
 M_R = 150.0              # Moda de días de inmunidad
 LAMBDA_LETALIDAD = 5.0   # Sensibilidad al estrés biológico neto
