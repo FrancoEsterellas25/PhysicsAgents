@@ -69,9 +69,27 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         # ponytail: initialize remaining visit timer array
         self.remaining_visit_time = np.zeros((self.N, self.H), dtype=np.float32)
         
+        # ponytail: initialize age (edades) and hub group IDs
+        np.random.seed(42)
+        self.edades = np.random.randint(5, 75, self.N)
+        if not hasattr(self, "hubs_is_closed"):
+            self.hubs_is_closed = np.zeros(self.H, dtype=bool)
+        self.hub_group_id = np.full((self.N, self.H), -1, dtype=np.int32)
+        
+        # Assign fixed groups in closed hubs (Escuela = 0, Trabajo = 1)
+        for h in range(self.H):
+            if self.hubs_is_closed[h]:
+                if h == 0:  # Escuela: closed, children < 18 only
+                    child_indices = np.where(self.edades < 18)[0]
+                    for idx_pos, idx in enumerate(child_indices):
+                        self.hub_group_id[idx, h] = idx_pos // 20  # class size of 20
+                elif h == 1:  # Trabajo: closed, adults 18 to 65 only
+                    adult_indices = np.where((self.edades >= 18) & (self.edades <= 65))[0]
+                    for idx_pos, idx in enumerate(adult_indices):
+                        self.hub_group_id[idx, h] = idx_pos // 15  # office size of 15
+
         # ponytail: initialize household allocations and coordinates
         H_hogar = int(np.ceil(self.N / self.N_hogar))
-        np.random.seed(42)
         unique_home_coords = np.random.uniform(0.0, self.L, (H_hogar, 2)).astype(np.float32)
         self.household_id = (np.arange(self.N, dtype=np.int32) % H_hogar)
         np.random.shuffle(self.household_id)
@@ -93,7 +111,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             "omega_ad": self.omega_ad,
             "tau_infection": self.tau_infection,
             "hogar_x": self.home_coords[:, 0],
-            "hogar_y": self.home_coords[:, 1]
+            "hogar_y": self.home_coords[:, 1],
+            "edad": self.edades
         })
         df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
         print(f"Exportado {base_dir / 'mapa_estatico.parquet'} (Continuo)")
@@ -175,8 +194,13 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             if np.any(mask_at_home):
                 for h in range(self.H):
                     if self.hubs_types[h] == 'agenda' and self.hubs_lambda[h] > 0:
+                        # Only allow visit if open hub OR if the agent has a group assigned in this closed hub
+                        can_visit = np.ones(self.N, dtype=bool)
+                        if self.hubs_is_closed[h]:
+                            can_visit = (self.hub_group_id[:, h] != -1)
+                        
                         prob_start = 1.0 - np.exp(-self.hubs_lambda[h] * self.dt)
-                        starts_visit = mask_at_home & (np.random.rand(self.N) < prob_start)
+                        starts_visit = mask_at_home & can_visit & (np.random.rand(self.N) < prob_start)
                         if np.any(starts_visit):
                             self.motion_state[starts_visit] = 1
                             self.remaining_transit_time[starts_visit] = self.T_transito
@@ -218,12 +242,33 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             pairs_arr = np.array(list(pairs_t))
             i_idx = pairs_arr[:, 0]
             j_idx = pairs_arr[:, 1]
-            dists = np.linalg.norm(coords_t[i_idx] - coords_t[j_idx], axis=1)
-            kernel_vals = np.exp(-(dists**2) / (2.0 * self.ell**2))
             
-            # Sum bidirectionally
-            np.add.at(R_t, i_idx, kernel_vals * emission_avg[j_idx] * mask_I[j_idx])
-            np.add.at(R_t, j_idx, kernel_vals * emission_avg[i_idx] * mask_I[i_idx])
+            # ponytail: Filter out pairs in the same closed hub that belong to different groups
+            allowed_mask = np.ones(len(i_idx), dtype=bool)
+            both_in_hub = (self.motion_state[i_idx] == 2) & (self.motion_state[j_idx] == 2)
+            if np.any(both_in_hub):
+                h_i = visiting_hub_idx[i_idx]
+                h_j = visiting_hub_idx[j_idx]
+                same_hub = both_in_hub & (h_i == h_j)
+                if np.any(same_hub):
+                    is_closed_hub = self.hubs_is_closed[h_i]
+                    closed_same_hub = same_hub & is_closed_hub
+                    if np.any(closed_same_hub):
+                        group_i = self.hub_group_id[i_idx, h_i]
+                        group_j = self.hub_group_id[j_idx, h_j]
+                        different_group = (group_i != group_j)
+                        allowed_mask[closed_same_hub & different_group] = False
+            
+            i_idx = i_idx[allowed_mask]
+            j_idx = j_idx[allowed_mask]
+            
+            if len(i_idx) > 0:
+                dists = np.linalg.norm(coords_t[i_idx] - coords_t[j_idx], axis=1)
+                kernel_vals = np.exp(-(dists**2) / (2.0 * self.ell**2))
+                
+                # Sum bidirectionally
+                np.add.at(R_t, i_idx, kernel_vals * emission_avg[j_idx] * mask_I[j_idx])
+                np.add.at(R_t, j_idx, kernel_vals * emission_avg[i_idx] * mask_I[i_idx])
 
         # 6. SPATIAL PREDICTION (Free brownian motion only for agents in transit, local diffusion for home/hub)
         D_basal_agent = self.D_basal * (1.0 - self.c_DS * self.eta_mov)
@@ -320,23 +365,39 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             pairs_pred_arr = np.array(list(pairs_pred))
             i_idx_p = pairs_pred_arr[:, 0]
             j_idx_p = pairs_pred_arr[:, 1]
-            dists_p = np.linalg.norm(coords_pred[i_idx_p] - coords_pred[j_idx_p], axis=1)
-            kernel_vals_p = np.exp(-(dists_p**2) / (2.0 * self.ell**2))
             
-            np.add.at(R_pred, i_idx_p, kernel_vals_p * emission_avg[j_idx_p] * mask_I[j_idx_p])
-            np.add.at(R_pred, j_idx_p, kernel_vals_p * emission_avg[i_idx_p] * mask_I[i_idx_p])
+            # ponytail: Filter out pairs in the same closed hub that belong to different groups
+            allowed_mask_p = np.ones(len(i_idx_p), dtype=bool)
+            both_in_hub_p = (self.motion_state[i_idx_p] == 2) & (self.motion_state[j_idx_p] == 2)
+            if np.any(both_in_hub_p):
+                h_i_p = visiting_hub_idx[i_idx_p]
+                h_j_p = visiting_hub_idx[j_idx_p]
+                same_hub_p = both_in_hub_p & (h_i_p == h_j_p)
+                if np.any(same_hub_p):
+                    is_closed_hub_p = self.hubs_is_closed[h_i_p]
+                    closed_same_hub_p = same_hub_p & is_closed_hub_p
+                    if np.any(closed_same_hub_p):
+                        group_i_p = self.hub_group_id[i_idx_p, h_i_p]
+                        group_j_p = self.hub_group_id[j_idx_p, h_j_p]
+                        different_group_p = (group_i_p != group_j_p)
+                        allowed_mask_p[closed_same_hub_p & different_group_p] = False
+            
+            i_idx_p = i_idx_p[allowed_mask_p]
+            j_idx_p = j_idx_p[allowed_mask_p]
+            
+            if len(i_idx_p) > 0:
+                dists_p = np.linalg.norm(coords_pred[i_idx_p] - coords_pred[j_idx_p], axis=1)
+                kernel_vals_p = np.exp(-(dists_p**2) / (2.0 * self.ell**2))
+                
+                np.add.at(R_pred, i_idx_p, kernel_vals_p * emission_avg[j_idx_p] * mask_I[j_idx_p])
+                np.add.at(R_pred, j_idx_p, kernel_vals_p * emission_avg[i_idx_p] * mask_I[i_idx_p])
             
         # 8. UPDATE DOSIS AND CONSOLIDATE
         self.dosis = self.dosis * np.exp(-self.delta * self.dt) + 0.5 * (R_t + R_pred) * self.dt
         self.coord_x = pred_x
         self.coord_y = pred_y
         
-        # Refix positions to avoid any tiny numerical drifts
-        self.coord_x[mask_home] = self.home_coords[mask_home, 0]
-        self.coord_y[mask_home] = self.home_coords[mask_home, 1]
-        if np.any(mask_hub) and self.H > 0:
-            self.coord_x[mask_hub] = self.hubs_coords[visiting_hub_idx[mask_hub], 0]
-            self.coord_y[mask_hub] = self.hubs_coords[visiting_hub_idx[mask_hub], 1]
+        # ponytail: Allow wandered coordinates to persist; no hard centers lock at step end.
 
         # 9. S -> E TRANSITIONS AND INFECTION TRACKING
         mask_S = (self.state == self.S)

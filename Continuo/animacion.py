@@ -55,13 +55,23 @@ class EscenaEpidemiologicaContinuo(Scene):
         # ponytail: Draw hubs if hubs.parquet exists
         try:
             df_hubs = pl.read_parquet(base_dir / "hubs.parquet")
-            for row in df_hubs.iter_rows(named=True):
+            for idx, row in enumerate(df_hubs.iter_rows(named=True)):
                 hx, hy, htipo = row["x"], row["y"], row["tipo"]
                 pos = mapear_posicion(hx, hy)
                 if htipo == "agenda":
-                    hub_mob = Square(side_length=0.4, color=YELLOW, fill_opacity=0.3, stroke_width=2, stroke_color=YELLOW)
+                    if idx == 0:
+                        name = "Escuela"
+                        color = YELLOW
+                    elif idx == 1:
+                        name = "Trabajo"
+                        color = ORANGE
+                    else:
+                        name = "Supermercado"
+                        color = BLUE_D
+                        
+                    hub_mob = Square(side_length=0.4, color=color, fill_opacity=0.3, stroke_width=2, stroke_color=color)
                     hub_mob.move_to(pos)
-                    label = Text("Escuela", font_size=10, color=YELLOW).next_to(hub_mob, UP, buff=0.05)
+                    label = Text(name, font_size=10, color=color).next_to(hub_mob, UP, buff=0.05)
                     self.add(hub_mob, label)
                 else:
                     # ponytail: use standard Circle and manually configure dashed pattern or style

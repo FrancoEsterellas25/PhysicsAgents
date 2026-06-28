@@ -209,24 +209,34 @@ def main():
     # ponytail: Add hubs as background shapes and annotations
     try:
         df_hubs = pl.read_parquet(base_dir / "hubs.parquet")
-        for row in df_hubs.iter_rows(named=True):
+        for idx, row in enumerate(df_hubs.iter_rows(named=True)):
             hx, hy, htipo = row["x"], row["y"], row["tipo"]
             if htipo == "agenda":
+                if idx == 0:
+                    name = "Escuela"
+                    color = "Yellow"
+                elif idx == 1:
+                    name = "Trabajo"
+                    color = "Orange"
+                else:
+                    name = "Supermercado"
+                    color = "Cyan"
+                    
                 fig.add_shape(
                     type="rect",
                     xref="x1", yref="y1",
                     x0=hx-1.5, y0=hy-1.5,
                     x1=hx+1.5, y1=hy+1.5,
-                    fillcolor="Yellow",
+                    fillcolor=color,
                     opacity=0.15,
-                    line=dict(color="Yellow", width=1.5)
+                    line=dict(color=color, width=1.5)
                 )
                 fig.add_annotation(
                     x=hx, y=hy+2.2,
                     xref="x1", yref="y1",
-                    text="Escuela",
+                    text=name,
                     showarrow=False,
-                    font=dict(color="Yellow", size=10),
+                    font=dict(color=color, size=10),
                     bgcolor="rgba(0,0,0,0.5)"
                 )
             else:
