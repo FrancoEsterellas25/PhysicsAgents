@@ -52,6 +52,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         
         # State tracking for visits (initialized in phase 0)
         self.remaining_visit_time = np.zeros((self.N, 0), dtype=np.float32)
+        self.transit_start_coords = np.zeros((self.N, 2), dtype=np.float32)
+        self.transit_end_coords = np.zeros((self.N, 2), dtype=np.float32)
         
         # Social distancing continuous effectiveness parameter
         self.eta_mov = 0.5
@@ -170,8 +172,10 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.hubs_coords[h, 0] = center_x + R_circle * np.cos(angle)
             self.hubs_coords[h, 1] = center_y + R_circle * np.sin(angle)
             
-        # Initialize remaining visit timer array
+        # Initialize remaining visit timer array and transit start/end coords
         self.remaining_visit_time = np.zeros((self.N, self.H), dtype=np.float32)
+        self.transit_start_coords = np.zeros((self.N, 2), dtype=np.float32)
+        self.transit_end_coords = np.zeros((self.N, 2), dtype=np.float32)
         self.hub_group_id = np.full((self.N, self.H), -1, dtype=np.int32)
         
         # School assignment for children
@@ -260,6 +264,9 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                     self.motion_state[i] = 1
                     self.remaining_transit_time[i] = self.T_transito
                     self.transit_destination_hub[i] = -1
+                    # Store coordinates for straight-line path interpolation
+                    self.transit_start_coords[i] = [self.coord_x[i], self.coord_y[i]]
+                    self.transit_end_coords[i] = self.home_coords[i]
 
         # Decrement transit timers (motion_state == 1)
         mask_in_transit = (self.motion_state == 1)
@@ -288,6 +295,9 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                 if np.any(abort_mask):
                     self.transit_destination_hub[abort_mask] = -1
                     self.remaining_transit_time[abort_mask] = self.T_transito
+                    # Store current position as transit start, and Home as end
+                    self.transit_start_coords[abort_mask] = np.column_stack((self.coord_x[abort_mask], self.coord_y[abort_mask]))
+                    self.transit_end_coords[abort_mask] = self.home_coords[abort_mask]
 
         # Visit triggers for agents at home (motion_state == 0) and not quarantined, not dead
         if not is_night and self.H > 0:
@@ -306,6 +316,9 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                             self.motion_state[starts_visit] = 1
                             self.remaining_transit_time[starts_visit] = self.T_transito
                             self.transit_destination_hub[starts_visit] = h
+                            # Store coordinates for straight-line path interpolation
+                            self.transit_start_coords[starts_visit] = np.column_stack((self.coord_x[starts_visit], self.coord_y[starts_visit]))
+                            self.transit_end_coords[starts_visit] = self.hubs_coords[h]
                             # Exclude from triggering multiple visits in same step
                             mask_at_home = mask_at_home & ~starts_visit
 
@@ -409,11 +422,30 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                         drift_x[can_drift] += self.hubs_kappa[h] * dir_x[can_drift] * weight[can_drift]
                         drift_y[can_drift] += self.hubs_kappa[h] * dir_y[can_drift] * weight[can_drift]
 
-        noise_x = np.random.normal(0.0, 1.0, self.N)
-        noise_y = np.random.normal(0.0, 1.0, self.N)
+        pred_x = self.coord_x.copy()
+        pred_y = self.coord_y.copy()
         
-        pred_x = self.coord_x + drift_x * self.dt + np.sqrt(2.0 * D_esp * self.dt) * noise_x
-        pred_y = self.coord_y + drift_y * self.dt + np.sqrt(2.0 * D_esp * self.dt) * noise_y
+        # Non-transit agents: local diffusion (Langevin)
+        mask_non_transit = (self.motion_state != 1)
+        if np.any(mask_non_transit):
+            noise_x = np.random.normal(0.0, 1.0, self.N)
+            noise_y = np.random.normal(0.0, 1.0, self.N)
+            pred_x[mask_non_transit] = self.coord_x[mask_non_transit] + np.sqrt(2.0 * D_esp[mask_non_transit] * self.dt) * noise_x[mask_non_transit]
+            pred_y[mask_non_transit] = self.coord_y[mask_non_transit] + np.sqrt(2.0 * D_esp[mask_non_transit] * self.dt) * noise_y[mask_non_transit]
+            
+        # Transit agents: linear path interpolation + small travel wiggle
+        mask_in_transit_pred = (self.motion_state == 1)
+        if np.any(mask_in_transit_pred):
+            frac = 1.0 - np.clip(self.remaining_transit_time / self.T_transito, 0.0, 1.0)
+            
+            base_x = self.transit_start_coords[:, 0] + (self.transit_end_coords[:, 0] - self.transit_start_coords[:, 0]) * frac
+            base_y = self.transit_start_coords[:, 1] + (self.transit_end_coords[:, 1] - self.transit_start_coords[:, 1]) * frac
+            
+            wiggle_x = np.random.normal(0.0, 0.15, self.N)
+            wiggle_y = np.random.normal(0.0, 0.15, self.N)
+            
+            pred_x[mask_in_transit_pred] = base_x[mask_in_transit_pred] + wiggle_x[mask_in_transit_pred]
+            pred_y[mask_in_transit_pred] = base_y[mask_in_transit_pred] + wiggle_y[mask_in_transit_pred]
         
         # Boundary reflections for transit agents
         # X Axis
