@@ -202,6 +202,50 @@ def main():
         sliders=[sliders_dict]
     )
 
+    # ponytail: Add hubs as background shapes and annotations
+    try:
+        df_hubs = pl.read_parquet(base_dir / "hubs.parquet")
+        for row in df_hubs.iter_rows(named=True):
+            hx, hy, htipo = row["x"], row["y"], row["tipo"]
+            if htipo == "agenda":
+                fig.add_shape(
+                    type="rect",
+                    xref="x1", yref="y1",
+                    x0=hx-1.5, y0=hy-1.5,
+                    x1=hx+1.5, y1=hy+1.5,
+                    fillcolor="Yellow",
+                    opacity=0.15,
+                    line=dict(color="Yellow", width=1.5)
+                )
+                fig.add_annotation(
+                    x=hx, y=hy+2.2,
+                    xref="x1", yref="y1",
+                    text="Escuela",
+                    showarrow=False,
+                    font=dict(color="Yellow", size=10),
+                    bgcolor="rgba(0,0,0,0.5)"
+                )
+            else:
+                fig.add_shape(
+                    type="circle",
+                    xref="x1", yref="y1",
+                    x0=hx-4.0, y0=hy-4.0,
+                    x1=hx+4.0, y1=hy+4.0,
+                    fillcolor="Green",
+                    opacity=0.10,
+                    line=dict(color="Green", width=1.5, dash="dash")
+                )
+                fig.add_annotation(
+                    x=hx, y=hy+5.0,
+                    xref="x1", yref="y1",
+                    text="Plaza",
+                    showarrow=False,
+                    font=dict(color="Green", size=10),
+                    bgcolor="rgba(0,0,0,0.5)"
+                )
+    except FileNotFoundError:
+        pass
+
     # Export to standalone html
     output_file = base_dir / "plotly_animacion.html"
     fig.write_html(output_file, auto_open=False)

@@ -18,7 +18,7 @@ L_ESPACIO = 50.0          # ponytail: increased L to 50.0 to reduce density (spa
 DIAS_SIMULACION = 30      # Duración física real de la simulación en días
 SEMILLA_INICIAL = 42
 AGENTES_INFECTADOS_INICIALES = 5 # ponytail: reduced initial seed to 1% of population
-PASO_TIEMPO_DT = 1/48      # dt=0.1 representa 2.4 horas por paso de simulación
+PASO_TIEMPO_DT = 1/96      # dt=0.1 representa 2.4 horas por paso de simulación
 
 # 2. PARÁMETROS ESPECÍFICOS DEL ENFOQUE CONTINUO
 DECAIMIENTO_DELTA = 0.5   # Tasa de degradación ambiental del virus
