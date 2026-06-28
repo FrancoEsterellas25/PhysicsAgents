@@ -61,8 +61,9 @@ with st.sidebar.expander("🛡️ Medidas de Intervención", expanded=True):
 # Section 4: Protección e Higiene
 with st.sidebar.expander("😷 Medidas de Protección Personal", expanded=True):
     barbijo_cumplimiento = st.slider("Cumplimiento Mascarilla (%)", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
-    barbijo_eficacia = st.slider("Eficacia Filtración Mascarilla (%)", min_value=0.0, max_value=1.0, value=0.6, step=0.1)
-    higiene_factor = st.slider("Nivel de Higiene Personal (Eleva umbral infeccioso)", min_value=1.0, max_value=3.0, value=1.0, step=0.1)
+    eta_em = st.slider("Eficiencia Filtración Emisión (eta_em)", min_value=0.0, max_value=1.0, value=0.6, step=0.05)
+    eta_rec = st.slider("Eficiencia Filtración Recepción (eta_rec)", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
+    eta_hig = st.slider("Higiene Personal (eta_hig - eleva V50)", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
 
 # Section 5: Parámetros Clínicos/Virus
 with st.sidebar.expander("☣️ Parámetros Físicos del Virus", expanded=False):
@@ -86,8 +87,9 @@ if st.button("🚀 Ejecutar Simulación", use_container_width=True):
     sim.c_DS = C_DS
     sim.enable_quarantine = enable_quarantine
     sim.quarantine_trigger_pct = quarantine_trigger_pct
-    sim.higiene_factor = higiene_factor
-    sim.barbijo_eficacia = barbijo_eficacia
+    sim.eta_hig = eta_hig
+    sim.eta_em = eta_em
+    sim.eta_rec = eta_rec
     sim.barbijo_cumplimiento = barbijo_cumplimiento
     sim.tau_max = tau_max
     sim.ell = ell

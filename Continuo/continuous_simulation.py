@@ -73,14 +73,27 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.enable_quarantine = True
         self.quarantine_trigger_pct = 0.05
         
-        self.higiene_factor = 1.0
-        self.barbijo_eficacia = 0.6
+        self.eta_hig = 0.0
+        self.eta_em = 0.6
+        self.eta_rec = 0.5
         self.barbijo_cumplimiento = 0.0
 
     def _fase0_inicializacion(self, output_dir=None):
         """Inicializa perfiles inmunes en core y exporta el mapa estático del enfoque continuo."""
         super()._fase0_inicializacion(output_dir=output_dir)
-        self.tau_infection = self.omega_in * self.tau_max
+        
+        # Sample mask wearing compliance
+        self.usa_barbijo = (np.random.rand(self.N) < self.barbijo_cumplimiento)
+        
+        # Initialize individual tau_infection thresholds
+        base_threshold = self.omega_in * self.tau_max
+        self.tau_infection = np.full(self.N, base_threshold, dtype=np.float32)
+        
+        # Apply personal hygiene factor (eta_hig) to elevate threshold for all agents
+        self.tau_infection *= (1.0 + self.eta_hig)
+        
+        # Apply receiver mask factor (eta_rec) to further elevate threshold only for mask wearers
+        self.tau_infection[self.usa_barbijo] /= (1.0 - self.eta_rec)
         
         # ponytail: initialize ages (edades)
         np.random.seed(42)
@@ -391,7 +404,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         
         # Apply mask (barbijo) compliance emission reduction
         if hasattr(self, "usa_barbijo"):
-            emission_avg[self.usa_barbijo] *= (1.0 - getattr(self, "barbijo_eficacia", 0.0))
+            emission_avg[self.usa_barbijo] *= (1.0 - getattr(self, "eta_em", 0.0))
 
         # 5. DOSIS FIELD CALCULATIONS (t_n)
         coords_t = np.column_stack((self.coord_x, self.coord_y))
