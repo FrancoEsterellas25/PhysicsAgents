@@ -97,6 +97,16 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         })
         df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
         print(f"Exportado {base_dir / 'mapa_estatico.parquet'} (Continuo)")
+        
+        # ponytail: export hubs.parquet if hubs exist
+        if self.H > 0:
+            df_hubs = pl.DataFrame({
+                "x": self.hubs_coords[:, 0],
+                "y": self.hubs_coords[:, 1],
+                "tipo": self.hubs_types
+            })
+            df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
+            print(f"Exportado {base_dir / 'hubs.parquet'}")
 
     def _fase2_contagio(self):
         """

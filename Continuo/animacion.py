@@ -52,6 +52,25 @@ class EscenaEpidemiologicaContinuo(Scene):
             py = offset_y - (box_height / 2.0) + (cy / L) * box_height
             return np.array([px, py, 0])
 
+        # ponytail: Draw hubs if hubs.parquet exists
+        try:
+            df_hubs = pl.read_parquet(base_dir / "hubs.parquet")
+            for row in df_hubs.iter_rows(named=True):
+                hx, hy, htipo = row["x"], row["y"], row["tipo"]
+                pos = mapear_posicion(hx, hy)
+                if htipo == "agenda":
+                    hub_mob = Square(side_length=0.4, color=YELLOW, fill_opacity=0.3, stroke_width=2, stroke_color=YELLOW)
+                    hub_mob.move_to(pos)
+                    label = Text("Escuela", font_size=10, color=YELLOW).next_to(hub_mob, UP, buff=0.05)
+                    self.add(hub_mob, label)
+                else:
+                    hub_mob = Circle(radius=0.4, color=GREEN, fill_opacity=0.1, stroke_width=2, stroke_color=GREEN).set_stroke(dashed=True)
+                    hub_mob.move_to(pos)
+                    label = Text("Plaza", font_size=10, color=GREEN).next_to(hub_mob, UP, buff=0.05)
+                    self.add(hub_mob, label)
+        except FileNotFoundError:
+            pass
+
         # Crear agentes como pequeños círculos
         agentes_mobjects = []
         df_t0 = df_dinamico.filter(pl.col("tiempo") == 0)
