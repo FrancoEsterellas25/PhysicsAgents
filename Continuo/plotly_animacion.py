@@ -51,9 +51,23 @@ def main():
         horizontal_spacing=0.08
     )
 
+    # ponytail: generate static visual jitter offset per agent (in screen coordinate units)
+    np.random.seed(42)
+    jitter_angle = np.random.uniform(0, 2*np.pi, N)
+    jitter_radius = np.random.uniform(0.15, 0.8, N)  # Offset fits the coordinate space scale visually
+    jitter_x = jitter_radius * np.cos(jitter_angle)
+    jitter_y = jitter_radius * np.sin(jitter_angle)
+
     # Initial data at t = 0
     df_t0 = df_dinamico.filter(pl.col("tiempo") == 0)
     colores_t0 = [COLOR_MAP[st] for st in df_t0["estado"].to_numpy()]
+    mstate_t0 = df_t0["motion_state"].to_numpy() if "motion_state" in df_t0.columns else np.zeros(N)
+    
+    x_t0_plot = df_t0["coord_x"].to_numpy().copy()
+    y_t0_plot = df_t0["coord_y"].to_numpy().copy()
+    mask_home_t0 = (mstate_t0 == 0)
+    x_t0_plot[mask_home_t0] += jitter_x[mask_home_t0]
+    y_t0_plot[mask_home_t0] += jitter_y[mask_home_t0]
     
     # Trace 0-4: Empty dummy traces for the legend
     for s in states:
@@ -73,8 +87,8 @@ def main():
     # Trace 5: The actual single Scatter trace with ALL agents (strictly sorted by id_agente)
     fig.add_trace(
         go.Scatter(
-            x=df_t0["coord_x"].to_numpy(),
-            y=df_t0["coord_y"].to_numpy(),
+            x=x_t0_plot,
+            y=y_t0_plot,
             mode="markers",
             marker=dict(color=colores_t0, size=5, opacity=0.8),
             showlegend=False
@@ -106,6 +120,14 @@ def main():
     for t_idx, t_val in enumerate(tiempos):
         df_t = df_dinamico.filter(pl.col("tiempo") == t_val)
         colores_t = [COLOR_MAP[st] for st in df_t["estado"].to_numpy()]
+        mstate_t = df_t["motion_state"].to_numpy() if "motion_state" in df_t.columns else np.zeros(N)
+        
+        x_t_plot = df_t["coord_x"].to_numpy().copy()
+        y_t_plot = df_t["coord_y"].to_numpy().copy()
+        mask_home_t = (mstate_t == 0)
+        x_t_plot[mask_home_t] += jitter_x[mask_home_t]
+        y_t_plot[mask_home_t] += jitter_y[mask_home_t]
+        
         frame_data = []
         
         # Legend dummies (Traces 0-4) - stay empty
@@ -115,8 +137,8 @@ def main():
         # Agent coordinates and updated state colors (Trace 5)
         frame_data.append(
             go.Scatter(
-                x=df_t["coord_x"].to_numpy(),
-                y=df_t["coord_y"].to_numpy(),
+                x=x_t_plot,
+                y=y_t_plot,
                 marker=dict(color=colores_t, size=5, opacity=0.8)
             )
         )
@@ -131,7 +153,8 @@ def main():
                 )
             )
             
-        frames.append(go.Frame(data=frame_data, name=f"dia_{t_val:.1f}"))
+        # ponytail: specify traces index list explicitly to ensure subplot trace update binding
+        frames.append(go.Frame(data=frame_data, name=f"dia_{t_val:.1f}", traces=list(range(11))))
 
     fig.frames = frames
 
