@@ -60,25 +60,22 @@ def main():
     df_t0 = df_dinamico.filter(pl.col("tiempo") == 0)
     colores_t0 = [COLOR_MAP[st] for st in df_t0["estado"].to_numpy()]
     
-    # Trace 0: Environmental Virus Density Heatmap (dynamic background)
-    GRID_RES = 40
-    grid_t0_flat = df_virus["virus_grid"][0]
-    grid_t0 = np.array(grid_t0_flat, dtype=np.float32).reshape((GRID_RES, GRID_RES))
-    x_grid = np.linspace(0, L, GRID_RES)
-    y_grid = np.linspace(0, L, GRID_RES)
+    # Trace 0: Lagrangian Aerosol Particles (dynamic background)
+    ax_t0 = df_virus["aerosol_x"][0]
+    ay_t0 = df_virus["aerosol_y"][0]
+    ad_t0 = df_virus["aerosol_dosis"][0]
     
     fig.add_trace(
-        go.Heatmap(
-            x=x_grid,
-            y=y_grid,
-            z=grid_t0,
-            colorscale="YlOrRd",
-            showscale=False,
-            opacity=0.45,
-            hoverinfo="skip",
-            zmin=0.0,
-            zmax=2.0,
-            zsmooth="best"
+        go.Scattergl(
+            x=ax_t0,
+            y=ay_t0,
+            mode="markers",
+            marker=dict(
+                color=["rgba(255, 127, 14, " + str(min(0.5, op * 0.35)) + ")" for op in ad_t0],
+                size=3
+            ),
+            name="Aerosol Viral (Gas)",
+            showlegend=True
         ),
         row=1, col=1
     )
@@ -150,13 +147,21 @@ def main():
         df_t = df_dinamico.filter(pl.col("tiempo") == t_val)
         colores_t = [COLOR_MAP[st] for st in df_t["estado"].to_numpy()]
         
-        # Load virus grid for this frame via integer index to avoid float precision mismatch
+        # Load aerosol particles for this frame via integer index
         grid_idx = min(t_idx * step_modulo, len(df_virus) - 1)
-        grid_t_flat = df_virus["virus_grid"][grid_idx]
-        grid_t = np.array(grid_t_flat, dtype=np.float32).reshape((GRID_RES, GRID_RES))
+        ax_t = df_virus["aerosol_x"][grid_idx]
+        ay_t = df_virus["aerosol_y"][grid_idx]
+        ad_t = df_virus["aerosol_dosis"][grid_idx]
         
         frame_data = [
-            go.Heatmap(z=grid_t, zsmooth="best"),
+            go.Scattergl(
+                x=ax_t,
+                y=ay_t,
+                marker=dict(
+                    color=["rgba(255, 127, 14, " + str(min(0.5, op * 0.35)) + ")" for op in ad_t],
+                    size=3
+                )
+            ),
             # Agent coordinates (Trace 7)
             go.Scatter(
                 x=df_t["coord_x"].to_numpy(),

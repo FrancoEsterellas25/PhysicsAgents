@@ -232,22 +232,10 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
             print(f"Exportado {base_dir / 'hubs.parquet'}")
             
-        # ponytail: Initialize virus concentration grid (40x40 resolution)
-        self.GRID_RES = 40
-        self.virus_grid = np.zeros((self.GRID_RES, self.GRID_RES), dtype=np.float32)
-        self.decay_grid = np.full((self.GRID_RES, self.GRID_RES), self.delta_ext, dtype=np.float32)
-        
-        # Populate closed space decay cells (Hogar, Escuela, Trabajo, Supermarket)
-        for h_idx in range(self.home_coords.shape[0]):
-            hx = np.clip(int(self.home_coords[h_idx, 0] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
-            hy = np.clip(int(self.home_coords[h_idx, 1] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
-            self.decay_grid[hy, hx] = self.delta_cerrado
-            
-        for h in range(self.H):
-            hx = np.clip(int(self.hubs_coords[h, 0] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
-            hy = np.clip(int(self.hubs_coords[h, 1] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
-            dec = self.delta_cerrado if self.hubs_is_closed_space[h] else self.delta_abierto
-            self.decay_grid[max(0, hy-1):min(self.GRID_RES, hy+2), max(0, hx-1):min(self.GRID_RES, hx+2)] = dec
+        # ponytail: Initialize Lagrangian aerosol particle arrays for gas simulation
+        self.aerosol_coords = np.zeros((0, 2), dtype=np.float32)
+        self.aerosol_dosis = np.zeros(0, dtype=np.float32)
+        self.aerosol_decay = np.zeros(0, dtype=np.float32)
 
     def _fase2_contagio(self):
         """
@@ -549,19 +537,52 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                 np.add.at(R_pred, i_idx_p, kernel_vals_p * emission_avg[j_idx_p] * mask_I[j_idx_p])
                 np.add.at(R_pred, j_idx_p, kernel_vals_p * emission_avg[i_idx_p] * mask_I[i_idx_p])
             
-        # Update spatial virus grid: decay & accumulation of emissions
-        self.virus_grid = self.virus_grid * np.exp(-self.decay_grid * self.dt)
+        # Update Lagrangian aerosol particles: decay, drift, and emission
+        self.aerosol_dosis *= np.exp(-self.aerosol_decay * self.dt)
+        keep_mask = (self.aerosol_dosis > 0.05)
+        self.aerosol_coords = self.aerosol_coords[keep_mask]
+        self.aerosol_dosis = self.aerosol_dosis[keep_mask]
+        self.aerosol_decay = self.aerosol_decay[keep_mask]
+        
+        if len(self.aerosol_coords) > 0:
+            # Particles drift slightly in space
+            self.aerosol_coords += np.random.normal(0.0, 0.08, size=self.aerosol_coords.shape)
+            
         if np.any(mask_I):
+            new_coords = []
+            new_dosis = []
+            new_decay = []
             for idx in np.where(mask_I)[0]:
-                gx = np.clip(int(self.coord_x[idx] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
-                gy = np.clip(int(self.coord_y[idx] / self.L * self.GRID_RES), 0, self.GRID_RES - 1)
-                e_val = emission_avg[idx] * self.dt * 15.0
-                for dy in [-1, 0, 1]:
-                    for dx in [-1, 0, 1]:
-                        ny, nx = gy + dy, gx + dx
-                        if 0 <= ny < self.GRID_RES and 0 <= nx < self.GRID_RES:
-                            weight = 1.0 if (dy == 0 and dx == 0) else 0.4
-                            self.virus_grid[ny, nx] += e_val * weight
+                x = self.coord_x[idx]
+                y = self.coord_y[idx]
+                
+                # Determine local decay rate based on agent's current space
+                mstate = self.motion_state[idx]
+                if mstate == 0:
+                    dec = self.delta_cerrado
+                elif mstate == 2:
+                    h_i = visiting_hub_idx[idx]
+                    dec = self.delta_cerrado if self.hubs_is_closed_space[h_i] else self.delta_abierto
+                else:
+                    dec = self.delta_ext
+                
+                # Emit two small aerosol particles per step
+                for _ in range(2):
+                    new_coords.append([x + np.random.normal(0.0, 0.15), y + np.random.normal(0.0, 0.15)])
+                    new_dosis.append(1.0)
+                    new_decay.append(dec)
+                    
+            if len(new_coords) > 0:
+                self.aerosol_coords = np.vstack((self.aerosol_coords, np.array(new_coords, dtype=np.float32)))
+                self.aerosol_dosis = np.concatenate((self.aerosol_dosis, np.array(new_dosis, dtype=np.float32)))
+                self.aerosol_decay = np.concatenate((self.aerosol_decay, np.array(new_decay, dtype=np.float32)))
+                
+        # Cap particle count to 1200 for high performance rendering
+        if len(self.aerosol_coords) > 1200:
+            idx_sorted = np.argsort(self.aerosol_dosis)[::-1][:1200]
+            self.aerosol_coords = self.aerosol_coords[idx_sorted]
+            self.aerosol_dosis = self.aerosol_dosis[idx_sorted]
+            self.aerosol_decay = self.aerosol_decay[idx_sorted]
             
         # 8. UPDATE DOSIS AND CONSOLIDATE (using spatially heterogeneous decay)
         delta_agents = np.full(self.N, self.delta_ext, dtype=np.float32)
@@ -610,13 +631,22 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.telemetry['dosis'] = []
             self.telemetry['motion_state'] = []
             self.telemetry['virus_tiempo'] = []
-            self.telemetry['virus_grid'] = []
+            self.telemetry['aerosol_x'] = []
+            self.telemetry['aerosol_y'] = []
+            self.telemetry['aerosol_dosis'] = []
         self.telemetry['coord_x'].append(self.coord_x.copy())
         self.telemetry['coord_y'].append(self.coord_y.copy())
         self.telemetry['dosis'].append(self.dosis.copy())
         self.telemetry['motion_state'].append(self.motion_state.copy())
         self.telemetry['virus_tiempo'].append(t)
-        self.telemetry['virus_grid'].append(self.virus_grid.copy().flatten())
+        if len(self.aerosol_coords) > 0:
+            self.telemetry['aerosol_x'].append(self.aerosol_coords[:, 0].copy())
+            self.telemetry['aerosol_y'].append(self.aerosol_coords[:, 1].copy())
+            self.telemetry['aerosol_dosis'].append(self.aerosol_dosis.copy())
+        else:
+            self.telemetry['aerosol_x'].append(np.zeros(0, dtype=np.float32))
+            self.telemetry['aerosol_y'].append(np.zeros(0, dtype=np.float32))
+            self.telemetry['aerosol_dosis'].append(np.zeros(0, dtype=np.float32))
 
     def run(self, output_dir=None, n_seed=10, seed=None):
         """Bucle principal de la simulación adaptada al continuo."""
@@ -663,10 +693,12 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             df_dinamico.write_parquet(path_dir / "telemetria_dinamica.parquet", compression="snappy")
             print(f"Exportado {path_dir / 'telemetria_dinamica.parquet'} (Continuo)")
             
-            # Export virus concentration grid history
+            # Export dynamic aerosol particles history
             df_virus = pl.DataFrame({
                 "tiempo": self.telemetry['virus_tiempo'],
-                "virus_grid": [list(grid) for grid in self.telemetry['virus_grid']]
+                "aerosol_x": [list(x) for x in self.telemetry['aerosol_x']],
+                "aerosol_y": [list(y) for y in self.telemetry['aerosol_y']],
+                "aerosol_dosis": [list(d) for d in self.telemetry['aerosol_dosis']]
             })
             df_virus.write_parquet(path_dir / "telemetria_virus.parquet", compression="snappy")
             print(f"Exportado {path_dir / 'telemetria_virus.parquet'}")
