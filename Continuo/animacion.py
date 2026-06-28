@@ -57,27 +57,30 @@ class EscenaEpidemiologicaContinuo(Scene):
             df_hubs = pl.read_parquet(base_dir / "hubs.parquet")
             for idx, row in enumerate(df_hubs.iter_rows(named=True)):
                 hx, hy, htipo = row["x"], row["y"], row["tipo"]
+                name = row.get("nombre", "Hub")
+                color_str = row.get("color", "White")
+                
+                # Map string color to Manim colors
+                color_map = {
+                    "yellow": YELLOW,
+                    "orange": ORANGE,
+                    "cyan": BLUE_D,
+                    "blue_d": BLUE_D,
+                    "green": GREEN,
+                    "white": WHITE
+                }
+                color = color_map.get(color_str.lower(), WHITE)
                 pos = mapear_posicion(hx, hy)
+                
                 if htipo == "agenda":
-                    if idx == 0:
-                        name = "Escuela"
-                        color = YELLOW
-                    elif 1 <= idx <= 4:
-                        name = "Trabajo"
-                        color = ORANGE
-                    else:
-                        name = "Supermercado"
-                        color = BLUE_D
-                        
                     hub_mob = Square(side_length=0.4, color=color, fill_opacity=0.3, stroke_width=2, stroke_color=color)
                     hub_mob.move_to(pos)
                     label = Text(name, font_size=10, color=color).next_to(hub_mob, UP, buff=0.05)
                     self.add(hub_mob, label)
                 else:
-                    # ponytail: use standard Circle and manually configure dashed pattern or style
-                    hub_mob = Circle(radius=0.4, color=GREEN, fill_opacity=0.1, stroke_width=2, stroke_color=GREEN)
+                    hub_mob = Circle(radius=0.4, color=color, fill_opacity=0.1, stroke_width=2, stroke_color=color)
                     hub_mob.move_to(pos)
-                    label = Text("Plaza", font_size=10, color=GREEN).next_to(hub_mob, UP, buff=0.05)
+                    label = Text(name, font_size=10, color=color).next_to(hub_mob, UP, buff=0.05)
                     self.add(hub_mob, label)
         except FileNotFoundError:
             pass

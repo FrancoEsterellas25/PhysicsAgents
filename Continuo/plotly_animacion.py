@@ -211,32 +211,40 @@ def main():
         df_hubs = pl.read_parquet(base_dir / "hubs.parquet")
         for idx, row in enumerate(df_hubs.iter_rows(named=True)):
             hx, hy, htipo = row["x"], row["y"], row["tipo"]
+            name = row.get("nombre", "Hub")
+            color_str = row.get("color", "White")
+            
+            # Map manim / lowercase colors to Plotly compatible strings
+            color = color_str.lower()
+            if color == "yellow":
+                color_val = "Yellow"
+            elif color == "orange":
+                color_val = "Orange"
+            elif color == "cyan":
+                color_val = "Cyan"
+            elif color == "blue_d" or color == "blue":
+                color_val = "DeepSkyBlue"
+            elif color == "green":
+                color_val = "Green"
+            else:
+                color_val = "White"
+                
             if htipo == "agenda":
-                if idx == 0:
-                    name = "Escuela"
-                    color = "Yellow"
-                elif 1 <= idx <= 4:
-                    name = "Trabajo"
-                    color = "Orange"
-                else:
-                    name = "Supermercado"
-                    color = "Cyan"
-                    
                 fig.add_shape(
                     type="rect",
                     xref="x1", yref="y1",
                     x0=hx-1.5, y0=hy-1.5,
                     x1=hx+1.5, y1=hy+1.5,
-                    fillcolor=color,
+                    fillcolor=color_val,
                     opacity=0.15,
-                    line=dict(color=color, width=1.5)
+                    line=dict(color=color_val, width=1.5)
                 )
                 fig.add_annotation(
                     x=hx, y=hy+2.2,
                     xref="x1", yref="y1",
                     text=name,
                     showarrow=False,
-                    font=dict(color=color, size=10),
+                    font=dict(color=color_val, size=10),
                     bgcolor="rgba(0,0,0,0.5)"
                 )
             else:
@@ -245,16 +253,16 @@ def main():
                     xref="x1", yref="y1",
                     x0=hx-4.0, y0=hy-4.0,
                     x1=hx+4.0, y1=hy+4.0,
-                    fillcolor="Green",
+                    fillcolor=color_val,
                     opacity=0.10,
-                    line=dict(color="Green", width=1.5, dash="dash")
+                    line=dict(color=color_val, width=1.5, dash="dash")
                 )
                 fig.add_annotation(
                     x=hx, y=hy+5.0,
                     xref="x1", yref="y1",
-                    text="Plaza",
+                    text=name,
                     showarrow=False,
-                    font=dict(color="Green", size=10),
+                    font=dict(color=color_val, size=10),
                     bgcolor="rgba(0,0,0,0.5)"
                 )
     except FileNotFoundError:

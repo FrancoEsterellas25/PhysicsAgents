@@ -66,35 +66,112 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         """Inicializa perfiles inmunes en core y exporta el mapa estático del enfoque continuo."""
         super()._fase0_inicializacion(output_dir=output_dir)
         self.tau_infection = self.omega_in * self.tau_max
-        # ponytail: initialize remaining visit timer array
-        self.remaining_visit_time = np.zeros((self.N, self.H), dtype=np.float32)
         
-        # ponytail: initialize age (edades) and hub group IDs
+        # ponytail: initialize ages (edades)
         np.random.seed(42)
         self.edades = np.random.randint(5, 75, self.N)
-        if not hasattr(self, "hubs_is_closed"):
-            self.hubs_is_closed = np.zeros(self.H, dtype=bool)
+        
+        # ponytail: scale hubs dynamically based on population size N
+        n_children = np.sum(self.edades < 18)
+        n_adults = np.sum((self.edades >= 18) & (self.edades <= 65))
+        
+        S = max(1, int(n_children // 70))  # ~70 children per school
+        W = max(1, int(n_adults // 60))    # ~60 adults per work center
+        M = max(1, int(self.N // 400))     # ~400 agents per supermarket
+        
+        self.H = S + W + M + 1  # Schools + Work Centers + Supermarkets + El Centro
+        
+        # Allocate hub config arrays
+        self.hubs_coords = np.zeros((self.H, 2), dtype=np.float32)
+        self.hubs_types = []
+        self.hubs_lambda = np.zeros(self.H, dtype=np.float32)
+        self.hubs_alpha = np.zeros(self.H, dtype=np.float32)
+        self.hubs_beta = np.zeros(self.H, dtype=np.float32)
+        self.hubs_kappa = np.zeros(self.H, dtype=np.float32)
+        self.hubs_ell = np.zeros(self.H, dtype=np.float32)
+        self.hubs_rho = np.zeros(self.H, dtype=np.float32)
+        self.hubs_is_closed = np.zeros(self.H, dtype=bool)
+        hubs_names = []
+        hubs_colors = []
+        
+        # Symmetrical Layout: Ring of agenda hubs + Centro in the middle
+        center_x, center_y = self.L / 2.0, self.L / 2.0
+        R_circle = self.L * 0.35
+        
+        # 1. Schools
+        for h in range(S):
+            self.hubs_types.append("agenda")
+            self.hubs_lambda[h] = 5.0 / 7.0
+            self.hubs_alpha[h] = 12.0
+            self.hubs_beta[h] = 0.5 / 24.0
+            self.hubs_kappa[h] = 0.0
+            self.hubs_ell[h] = 0.0
+            self.hubs_rho[h] = 0.8
+            self.hubs_is_closed[h] = True
+            hubs_names.append(f"Escuela {h+1}" if S > 1 else "Escuela")
+            hubs_colors.append("Yellow")
+            
+        # 2. Work Centers
+        for h in range(S, S + W):
+            self.hubs_types.append("agenda")
+            self.hubs_lambda[h] = 5.0 / 7.0
+            self.hubs_alpha[h] = 16.0
+            self.hubs_beta[h] = 0.5 / 24.0
+            self.hubs_kappa[h] = 0.0
+            self.hubs_ell[h] = 0.0
+            self.hubs_rho[h] = 0.7
+            self.hubs_is_closed[h] = True
+            hubs_names.append(f"Trabajo {h-S+1}" if W > 1 else "Trabajo")
+            hubs_colors.append("Orange")
+            
+        # 3. Supermarkets
+        for h in range(S + W, S + W + M):
+            self.hubs_types.append("agenda")
+            self.hubs_lambda[h] = 0.5
+            self.hubs_alpha[h] = 3.0
+            self.hubs_beta[h] = 0.25 / 24.0
+            self.hubs_kappa[h] = 0.0
+            self.hubs_ell[h] = 0.0
+            self.hubs_rho[h] = 0.9
+            self.hubs_is_closed[h] = False
+            hubs_names.append(f"Supermercado {h-S-W+1}" if M > 1 else "Supermercado")
+            hubs_colors.append("Cyan")
+            
+        # 4. El Centro (Gravitational - Open)
+        h_centro = S + W + M
+        self.hubs_coords[h_centro] = [center_x, center_y]
+        self.hubs_types.append("gravitatorio")
+        self.hubs_lambda[h_centro] = 0.0
+        self.hubs_alpha[h_centro] = 0.0
+        self.hubs_beta[h_centro] = 0.0
+        self.hubs_kappa[h_centro] = 2.5
+        self.hubs_ell[h_centro] = 10.0
+        self.hubs_rho[h_centro] = 1.0
+        self.hubs_is_closed[h_centro] = False
+        hubs_names.append("El Centro")
+        hubs_colors.append("Green")
+        
+        # Distribute agenda hubs coordinates in the ring
+        for h in range(S + W + M):
+            angle = 2.0 * np.pi * h / (S + W + M)
+            self.hubs_coords[h, 0] = center_x + R_circle * np.cos(angle)
+            self.hubs_coords[h, 1] = center_y + R_circle * np.sin(angle)
+            
+        # Initialize remaining visit timer array
+        self.remaining_visit_time = np.zeros((self.N, self.H), dtype=np.float32)
         self.hub_group_id = np.full((self.N, self.H), -1, dtype=np.int32)
         
-        # Assign fixed groups in closed hubs (Escuela = Hub 0, Trabajo centers = Hubs 1 to W)
-        closed_hubs = [h for h in range(self.H) if self.hubs_is_closed[h]]
-        if len(closed_hubs) > 0:
-            school_hub = closed_hubs[0]  # First closed hub is Escuela
-            work_hubs = closed_hubs[1:]  # Remaining closed hubs are Work centers
+        # School assignment for children
+        child_indices = np.where(self.edades < 18)[0]
+        for idx_pos, idx in enumerate(child_indices):
+            h_school = idx_pos % S
+            self.hub_group_id[idx, h_school] = (idx_pos // S) // 20  # class size of 20
             
-            # School assignment for children
-            child_indices = np.where(self.edades < 18)[0]
-            for idx_pos, idx in enumerate(child_indices):
-                self.hub_group_id[idx, school_hub] = idx_pos // 20  # class size of 20
-                
-            # Work assignment for adults (distributed across work_hubs)
-            if len(work_hubs) > 0:
-                adult_indices = np.where((self.edades >= 18) & (self.edades <= 65))[0]
-                for idx_pos, idx in enumerate(adult_indices):
-                    # Distribute adults evenly across work centers
-                    h_work = work_hubs[idx_pos % len(work_hubs)]
-                    # Assign to a team of size 12 within that specific work center
-                    self.hub_group_id[idx, h_work] = (idx_pos // len(work_hubs)) // 12
+        # Work assignment for adults (ages 18 to 65 only, retirees are excluded!)
+        adult_indices = np.where((self.edades >= 18) & (self.edades <= 65))[0]
+        for idx_pos, idx in enumerate(adult_indices):
+            h_work = S + (idx_pos % W)
+            self.hub_group_id[idx, h_work] = (idx_pos // W) // 12  # office size of 12
 
         # ponytail: initialize household allocations and coordinates
         H_hogar = int(np.ceil(self.N / self.N_hogar))
@@ -125,12 +202,14 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
         print(f"Exportado {base_dir / 'mapa_estatico.parquet'} (Continuo)")
         
-        # ponytail: export hubs.parquet if hubs exist
+        # ponytail: export hubs.parquet if hubs exist (with name and color properties)
         if self.H > 0:
             df_hubs = pl.DataFrame({
                 "x": self.hubs_coords[:, 0],
                 "y": self.hubs_coords[:, 1],
-                "tipo": self.hubs_types
+                "tipo": self.hubs_types,
+                "nombre": hubs_names,
+                "color": hubs_colors
             })
             df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
             print(f"Exportado {base_dir / 'hubs.parquet'}")
