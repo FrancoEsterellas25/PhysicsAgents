@@ -458,16 +458,17 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             D_basal_agent + self.D_min
         )
         
-        # ponytail: assign non-zero diffusion coefficients for home and hub states to make the space look alive
-        D_esp = np.where(
-            self.motion_state == 1,
-            D_esp,  # full speed in transit
-            np.where(
-                self.motion_state == 2,
-                0.20 * D_basal_agent,  # moderate local movement in hubs (e.g. plaza, school)
-                0.08 * D_basal_agent   # slow local movement within household bounds
+        # ponytail: assign non-zero diffusion coefficients for home and hub states (only if not movimiento_libre)
+        if not getattr(self, "movimiento_libre", False):
+            D_esp = np.where(
+                self.motion_state == 1,
+                D_esp,  # full speed in transit
+                np.where(
+                    self.motion_state == 2,
+                    0.20 * D_basal_agent,  # moderate local movement in hubs (e.g. plaza, school)
+                    0.08 * D_basal_agent   # slow local movement within household bounds
+                )
             )
-        )
         
         # Deceased agents remain completely still (diffusion is zero)
         D_esp[self.state == self.D] = 0.0
