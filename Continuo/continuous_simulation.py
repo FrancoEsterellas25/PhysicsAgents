@@ -21,7 +21,10 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.L = L
         
         # Parámetros específicos del Enfoque Continuo
-        self.delta = 0.5         # Decaimiento ambiental
+        self.delta = 0.5         # Decaimiento ambiental default
+        self.delta_cerrado = 0.2  # Decaimiento en espacios cerrados (Hogar, Escuela, Trabajo)
+        self.delta_ext = 1.0     # Decaimiento en tránsito / exteriores
+        self.delta_abierto = 4.0  # Decaimiento en espacios abiertos (Supermercado, Centro)
         self.ell = 1.0           # Longitud de escala del kernel gaussiano
         self.D_basal = 1.0       # Difusividad basal
         self.D_min = 0.05        # Difusividad mínima
@@ -479,8 +482,19 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                 np.add.at(R_pred, i_idx_p, kernel_vals_p * emission_avg[j_idx_p] * mask_I[j_idx_p])
                 np.add.at(R_pred, j_idx_p, kernel_vals_p * emission_avg[i_idx_p] * mask_I[i_idx_p])
             
-        # 8. UPDATE DOSIS AND CONSOLIDATE
-        self.dosis = self.dosis * np.exp(-self.delta * self.dt) + 0.5 * (R_t + R_pred) * self.dt
+        # 8. UPDATE DOSIS AND CONSOLIDATE (using spatially heterogeneous decay)
+        delta_agents = np.full(self.N, self.delta_ext, dtype=np.float32)
+        # Closed spaces: Home (motion_state == 0)
+        delta_agents[self.motion_state == 0] = self.delta_cerrado
+        # Hubs (motion_state == 2)
+        mask_hub_active = (self.motion_state == 2)
+        if np.any(mask_hub_active) and self.H > 0:
+            h_indices = visiting_hub_idx[mask_hub_active]
+            is_closed_h = self.hubs_is_closed[h_indices]
+            # Closed hubs get delta_cerrado, open hubs get delta_abierto
+            delta_agents[mask_hub_active] = np.where(is_closed_h, self.delta_cerrado, self.delta_abierto)
+            
+        self.dosis = self.dosis * np.exp(-delta_agents * self.dt) + 0.5 * (R_t + R_pred) * self.dt
         self.coord_x = pred_x
         self.coord_y = pred_y
         

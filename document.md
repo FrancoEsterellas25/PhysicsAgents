@@ -216,9 +216,23 @@ $$I_{j,t} = \sum_{i \in N(j)} w(d_{ij}) \cdot \frac{\Delta t}{2} \cdot (V_{i,t} 
 
 La acumulación de dosis con decaimiento ambiental analíticamente estable:
 
-$$D_j(t + \Delta t) = D_j(t) \cdot e^{-\delta \Delta t} + I_{j,t}$$
+$$D_j(t + \Delta t) = D_j(t) \cdot e^{-\delta(\mathbf{x}_j, t)\, \Delta t} + I_{j,t}$$
 
-**Nota sobre δ:** El parámetro de degradación ambiental debe calibrarse empíricamente. Valores típicos para aerosoles en espacios cerrados: δ ∈ [0.1, 2.0] h⁻¹. Un δ mal estimado puede hacer al modelo irrealmente infeccioso (δ → 0) o instantáneamente no infeccioso (δ → ∞).
+**Decaimiento espacialmente variable — modelo de ventilación.** El parámetro de degradación $\delta$ no es un escalar global sino una función del tipo de espacio que ocupa la región $j$ en el tiempo $t$. Su fundamento físico es el modelo de Wells-Riley para transmisión aérea en recintos: en estado estacionario, la concentración de aerosoles infecciosos es inversamente proporcional al caudal de ventilación $Q$ del espacio. Un mayor caudal — viento, apertura, ventilación mecánica — acelera la eliminación del inóculo, equivalente a un $\delta$ alto.
+
+$$\delta(\mathbf{x}_j, t) = \begin{cases} \delta_{cerrado} & \text{si } \mathbf{x}_j \in \text{hub cerrado activo en } t \\ \delta_{abierto} & \text{si } \mathbf{x}_j \in \text{hub abierto o zona gravitatoria activa en } t \\ \delta_{ext} & \text{exterior (default)} \end{cases}$$
+
+con la jerarquía $\delta_{cerrado} < \delta_{ext} < \delta_{abierto}$, reflejando que:
+
+- **Espacio cerrado** (escuela, oficina): recirculación de aire, sin exposición UV, ventilación limitada. El inóculo persiste — un infectado que ya abandonó el recinto puede seguir causando infecciones en quienes lleguen después (*transmisión diferida*).
+- **Exterior** (default browniano): dispersión por convección y radiación UV. Decaimiento intermedio.
+- **Espacio abierto** (plaza, zona gravitatoria): viento, dilución en volumen ilimitado, máxima exposición UV. El inóculo se degrada rápidamente — la transmisión requiere co-presencia casi simultánea.
+
+La transmisión diferida en espacios cerrados — contagio entre personas que nunca estuvieron simultáneamente en el hub — es un fenómeno documentado para COVID-19, sarampión y tuberculosis que este modelo reproduce sin parametrización adicional: es el campo $D_j(t)$ con $\delta_{cerrado}$ bajo evaluado en las posiciones de los agentes que llegan *después* del infectado.
+
+**Implementación.** En cada paso temporal, el valor de $\delta(\mathbf{x}_j, t)$ se determina verificando si la posición $\mathbf{x}_j$ cae dentro del radio de algún hub activo (`motion_state == 2` o zona gravitatoria con $|\mathbf{x}_j - \mathbf{c}_h| \leq r_h$) y aplicando el $\delta$ correspondiente. Las regiones fuera de todo hub usan $\delta_{ext}$.
+
+**Nota sobre calibración:** Los tres valores deben calibrarse empíricamente o derivarse del caudal de ventilación del espacio. Valores de referencia para aerosoles respiratorios: $\delta_{cerrado} \in [0.1, 0.5]$ h⁻¹, $\delta_{ext} \in [0.5, 1.0]$ h⁻¹, $\delta_{abierto} \in [1.0, 4.0]$ h⁻¹.
 
 ### 2. Campo Ambiental en Espacio Continuo
 
@@ -377,8 +391,6 @@ donde ε > 0 representa la siembra viral inicial. El resto de la población mant
 
 ---
 
----
-
 ## Parte VIII: Extensiones Estructurales y Experimentos Canónicos
 
 Esta sección formaliza dos ejes de extensión del modelo base: la introducción de **movilidad estructurada** (puntos de atracción y multiparche) y el **análisis de intervenciones de política sanitaria** (cuarentena con falla asintomática, distancia social). Cada extensión se define en términos del modelo existente, explicita qué parámetros modifica y propone el experimento canónico que la valida.
@@ -475,11 +487,25 @@ La duración de cada estadía se extrae de:
 
 $$\Delta_{i,h} \sim \text{Gamma}(\alpha_h, \beta_h)$$
 
-con $\alpha_h, \beta_h$ calibrados por tipo de hub ($\alpha_h \approx 1$ para visitas cortas variables como un kiosco; $\alpha_h \gg 1$ para jornadas de duración concentrada como una escuela). Durante la estadía, el operador de Langevin se suspende completamente y la posición se fija:
+con $\alpha_h, \beta_h$ calibrados por tipo de hub ($\alpha_h \approx 1$ para visitas cortas variables como un kiosco; $\alpha_h \gg 1$ para jornadas de duración concentrada como una escuela).
+
+El comportamiento durante la estadía depende del tipo de hub:
+
+**Hubs cerrados — posición fija.** El operador de Langevin se suspende completamente y la posición se ancla en el centroide:
 
 $$\mathbf{x}_i(t) = \mathbf{c}_h \qquad t \in \bigl[T_{i,h}^{(k)},\; T_{i,h}^{(k)} + \Delta_{i,h}\bigr]$$
 
-Al finalizar la visita, el agente retoma la SDE desde $\mathbf{c}_h$. El cierre de un hub de agenda se implementa anulando la tasa: $\lambda_{i,h} \to 0\;\forall i$.
+Apropiado para escuelas y oficinas, donde el agente ocupa un puesto fijo y la exposición entre compañeros es uniforme y sostenida.
+
+**Hubs abiertos — difusión local restringida.** El operador de Langevin se reactiva pero confinado al disco de radio $r_h$ centrado en $\mathbf{c}_h$:
+
+$$d\mathbf{x}_i(t) = \sqrt{2\,D_{loc,h}}\;\circ\;d\mathbf{W}_i(t), \qquad |\mathbf{x}_i(t) - \mathbf{c}_h| \leq r_h$$
+
+con $D_{loc,h} \leq D_{basal}$ una difusividad local reducida (el agente pasea, no difunde libremente) y la restricción de frontera implementada por reflexión elástica. Esta variante captura que en una plaza o centro comercial los agentes se mueven dentro del espacio sin abandonarlo durante la estadía, distribuyendo el inóculo dentro del radio en lugar de concentrarlo en un punto.
+
+El campo ambiental $D_j(t)$ usa en ambos casos la posición actual del agente $\mathbf{x}_i(t)$ — en el caso de posición fija coincide con $\mathbf{c}_h$; en el caso de difusión restringida varía dentro del disco. El parámetro `motion_state` toma valor `2` en ambos sub-estados; la distinción se implementa mediante el flag `hub_difusion_local[h]`.
+
+Al finalizar la estadía, el agente retoma la SDE global desde su posición actual $\mathbf{x}_i(T_{i,h}^{(k)} + \Delta_{i,h})$. El cierre de cualquier hub de agenda se implementa anulando la tasa: $\lambda_{i,h} \to 0\;\forall i$.
 
 ---
 
@@ -657,7 +683,9 @@ $\hat{R}_{ef}(t)$ es la métrica canónica para evaluar si una intervención (cu
 
 | Parámetro | Símbolo | Rango típico | Descripción |
 |---|---|---|---|
-| Decaimiento ambiental | δ | [0.1, 2.0] h⁻¹ | Tasa de degradación del virus en el entorno |
+| Decaimiento ambiental en espacio cerrado | $\delta_{cerrado}$ | [0.1, 0.5] h⁻¹ | Tasa de degradación del inóculo en hubs cerrados (escuela, oficina) |
+| Decaimiento ambiental en exterior | $\delta_{ext}$ | [0.5, 1.0] h⁻¹ | Tasa de degradación en zona browniana default |
+| Decaimiento ambiental en espacio abierto | $\delta_{abierto}$ | [1.0, 4.0] h⁻¹ | Tasa de degradación en hubs abiertos y zonas gravitatorias |
 | Longitud de escala del kernel | ℓ | [0.5, 5.0] m | Radio de dispersión del inóculo |
 | Radio de corte del árbol k-d | r_cut | 3ℓ | Umbral de evaluación del kernel gaussiano |
 | Difusividad basal de agentes | D_basal | [0.1, 10] m²/h | Movilidad de agentes sanos |
@@ -681,6 +709,9 @@ $\hat{R}_{ef}(t)$ es la métrica canónica para evaluar si una intervención (cu
 | Tasa de visita del agente $i$ al hub $h$ | $\lambda_{i,h}$ | [0, 5] visitas/día | VIII.A.1 |
 | Forma de la distribución de estadía en hub $h$ | $\alpha_h$ | [1, 10] | VIII.A.1 |
 | Escala de la distribución de estadía en hub $h$ | $\beta_h$ | [0.1, 2.0] h | VIII.A.1 |
+| Radio de difusión local en hub abierto $h$ | $r_h$ | [0.05L, 0.2L] | VIII.A.1 |
+| Difusividad local dentro del hub abierto $h$ | $D_{loc,h}$ | $[0, D_{basal}]$ | VIII.A.1 |
+| Flag de difusión local del hub $h$ | $\texttt{hub\_difusion\_local}_h$ | booleano | VIII.A.1 |
 | Masa gravitatoria del hub $h$ | $\kappa_h$ | [0, 5.0] | VIII.A.1 |
 | Radio de influencia gravitatoria del hub $h$ | $\ell_h$ | [0.05L, 0.3L] | VIII.A.1 |
 | Factor de emisión de inóculo en hub $h$ | $\rho_h$ | [0.1, 1.0] | VIII.A.1 |

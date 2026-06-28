@@ -90,6 +90,10 @@ def main():
         # Hubs are dynamically scaled and distributed in continuous_simulation.py based on population size self.N
         sim.H = 1
         
+    sim.delta_cerrado = 0.2
+    sim.delta_ext = 1.0
+    sim.delta_abierto = 4.0
+        
     sim.t_trigger = T_TRIGGER_INTERVENCION
     sim.p_Q = EFICACIA_CUARENTENA_PQ
     sim.v_sint = UMBRAL_SINTOMAS_VSINT
