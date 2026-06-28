@@ -135,7 +135,7 @@ def main():
                 )
             )
             
-        frames.append(go.Frame(data=frame_data, name=f"dia_{t_val:.1f}"))
+        frames.append(go.Frame(data=frame_data, name=f"frame_{t_idx}"))
 
     fig.frames = frames
 
@@ -158,10 +158,10 @@ def main():
         "steps": []
     }
 
-    for t_val in tiempos:
+    for t_idx, t_val in enumerate(tiempos):
         slider_step = {
             "args": [
-                [f"dia_{t_val:.1f}"],
+                [f"frame_{t_idx}"],
                 {"frame": {"duration": 0, "redraw": True}, "mode": "immediate", "transition": {"duration": 0}}
             ],
             "label": f"{t_val:.1f}",
