@@ -64,12 +64,21 @@ class EscenaEpidemiologicaContinuo(Scene):
                     label = Text("Escuela", font_size=10, color=YELLOW).next_to(hub_mob, UP, buff=0.05)
                     self.add(hub_mob, label)
                 else:
-                    hub_mob = Circle(radius=0.4, color=GREEN, fill_opacity=0.1, stroke_width=2, stroke_color=GREEN).set_stroke(dashed=True)
+                    # ponytail: use standard Circle and manually configure dashed pattern or style
+                    hub_mob = Circle(radius=0.4, color=GREEN, fill_opacity=0.1, stroke_width=2, stroke_color=GREEN)
                     hub_mob.move_to(pos)
                     label = Text("Plaza", font_size=10, color=GREEN).next_to(hub_mob, UP, buff=0.05)
                     self.add(hub_mob, label)
         except FileNotFoundError:
             pass
+
+        # ponytail: generate static visual jitter offset per agent (in screen units)
+        # to prevent cohabitants from stacking exactly on top of each other at home
+        np.random.seed(42)
+        jitter_angle = np.random.uniform(0, 2*np.pi, N)
+        jitter_radius = np.random.uniform(0.015, 0.08, N)
+        jitter_x = jitter_radius * np.cos(jitter_angle)
+        jitter_y = jitter_radius * np.sin(jitter_angle)
 
         # Crear agentes como pequeños círculos
         agentes_mobjects = []
@@ -78,9 +87,12 @@ class EscenaEpidemiologicaContinuo(Scene):
         y_t0 = df_t0["coord_y"].to_numpy()
         estado_t0 = df_t0["estado"].to_numpy()
         carga_t0 = df_t0["carga_viral"].to_numpy()
+        mstate_t0 = df_t0["motion_state"].to_numpy() if "motion_state" in df_t0.columns else np.zeros(N)
 
         for i in range(N):
             pos = mapear_posicion(x_t0[i], y_t0[i])
+            if mstate_t0[i] == 0:
+                pos += np.array([jitter_x[i], jitter_y[i], 0])
             # Círculos muy pequeños para acomodar N=1600 agentes
             agente = Circle(radius=0.035, stroke_width=0)
             agente.move_to(pos)
@@ -164,15 +176,21 @@ class EscenaEpidemiologicaContinuo(Scene):
             estado_t = df_t["estado"].to_numpy()
             carga_t = df_t["carga_viral"].to_numpy()
             
+            mstate_prev = df_prev["motion_state"].to_numpy() if "motion_state" in df_prev.columns else np.zeros(N)
+            mstate_t = df_t["motion_state"].to_numpy() if "motion_state" in df_t.columns else np.zeros(N)
+            
             conteo_actual = historico_conteos[t_idx]
             
             for f in range(1, frames_per_step + 1):
                 alpha = f / frames_per_step
                 x_interp = (1.0 - alpha) * x_prev + alpha * x_t
                 y_interp = (1.0 - alpha) * y_prev + alpha * y_t
+                current_mstate = np.where(alpha >= 0.5, mstate_t, mstate_prev)
                 
                 for i in range(N):
                     pos = mapear_posicion(x_interp[i], y_interp[i])
+                    if current_mstate[i] == 0:
+                        pos += np.array([jitter_x[i], jitter_y[i], 0])
                     agentes_mobjects[i].move_to(pos)
                     
                     est = estado_t[i] if alpha >= 0.5 else estado_prev[i]
