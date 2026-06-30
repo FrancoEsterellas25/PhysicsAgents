@@ -31,10 +31,33 @@ def main():
     tiempos = tiempos_all[::step_modulo]
     T_max = len(tiempos)
     
-    df_pd = df_pd_all[df_pd_all["tiempo"].isin(tiempos)]
+    df_pd = df_pd_all[df_pd_all["tiempo"].isin(tiempos)].copy()
     
-    max_x = int(df_pd["coord_x"].max())
-    max_y = int(df_pd["coord_y"].max())
+    # ---------------------------------------------------------------------
+    # DETECCIÓN DE TOPOLOGÍA Y CONFIGURACIÓN GRÁFICA
+    # ---------------------------------------------------------------------
+    topology_type = df_estatico["topology"][0] if "topology" in df_estatico.columns else "hexagonal"
+    
+    if topology_type == "hexagonal":
+        R = 1.0  # Radio lógico del hexágono
+        w = np.sqrt(3) * R
+        h = 1.5 * R
+        df_pd["coord_x_plot"] = (df_pd["coord_x"] + 0.5 * (df_pd["coord_y"] % 2)) * w
+        df_pd["coord_y_plot"] = df_pd["coord_y"] * h
+        marker_symbol = "hexagon"
+        marker_size = 11
+        title_x = "Posición Horizontal (Hex)"
+        title_y = "Posición Vertical (Hex)"
+    else:
+        df_pd["coord_x_plot"] = df_pd["coord_x"]
+        df_pd["coord_y_plot"] = df_pd["coord_y"]
+        marker_symbol = "square"
+        marker_size = 9
+        title_x = "Columnas"
+        title_y = "Filas"
+        
+    max_x = df_pd["coord_x_plot"].max()
+    max_y = df_pd["coord_y_plot"].max()
     
     # Define states, labels and colors
     states = [0, 1, 2, 3, 4]
@@ -83,10 +106,16 @@ def main():
     # Trace 5: The actual single Scatter grid trace (strictly sorted by id_agente)
     fig.add_trace(
         go.Scatter(
-            x=df_t0["coord_x"].to_numpy(),
-            y=df_t0["coord_y"].to_numpy(),
+            x=df_t0["coord_x_plot"].to_numpy(),
+            y=df_t0["coord_y_plot"].to_numpy(),
             mode="markers",
-            marker=dict(symbol="square", color=colores_t0, size=9, opacity=0.9),
+            marker=dict(
+                symbol=marker_symbol, 
+                color=colores_t0, 
+                size=marker_size, 
+                opacity=0.9,
+                line=dict(width=0.5, color="rgba(255, 255, 255, 0.15)")
+            ),
             showlegend=False
         ),
         row=1, col=1
@@ -123,9 +152,15 @@ def main():
         # Agent coordinates and updated state colors (Trace 5)
         frame_data.append(
             go.Scatter(
-                x=df_t["coord_x"].to_numpy(),
-                y=df_t["coord_y"].to_numpy(),
-                marker=dict(symbol="square", color=colores_t, size=9, opacity=0.9)
+                x=df_t["coord_x_plot"].to_numpy(),
+                y=df_t["coord_y_plot"].to_numpy(),
+                marker=dict(
+                    symbol=marker_symbol, 
+                    color=colores_t, 
+                    size=marker_size, 
+                    opacity=0.9,
+                    line=dict(width=0.5, color="rgba(255, 255, 255, 0.15)")
+                )
             )
         )
             
@@ -179,8 +214,8 @@ def main():
         width=1100,
         height=700,
         margin=dict(l=50, r=50, t=100, b=100),
-        xaxis=dict(range=[-1, max_x + 1], scaleanchor="y", scaleratio=1, title="Columnas"),
-        yaxis=dict(range=[-1, max_y + 1], title="Filas"),
+        xaxis=dict(range=[-2, max_x + 2], scaleanchor="y", scaleratio=1, title=title_x),
+        yaxis=dict(range=[-2, max_y + 2], title=title_y),
         xaxis2=dict(range=[0, tiempos[-1]], title="Tiempo (Días)"),
         yaxis2=dict(range=[0, 100], title="Porcentaje (%)"),
         updatemenus=[

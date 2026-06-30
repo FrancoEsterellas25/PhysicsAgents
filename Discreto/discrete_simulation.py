@@ -47,7 +47,8 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
             "coord_y": self.coord_y,
             "omega_in": self.omega_in,
             "omega_ad": self.omega_ad,
-            "v50": self.v50
+            "v50": self.v50,
+            "topology": self.topology
         })
         df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
         print(f"Exportado {base_dir / 'mapa_estatico.parquet'}")
