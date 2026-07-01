@@ -471,15 +471,67 @@ El parámetro de higiene personal $\eta_{hig} \in [0, 1]$ representa el aumento 
 
 ---
 
-### 3. Catálogo de Patógenos Unificado
+### 3. Catálogo de Patógenos y Modelado Conceptual
 
-Para garantizar consistencia biológica, las características clínicas intrínsecas del virus se definen en una estructura inmutable `VirusProfile`. Al seleccionar un virus del catálogo, todas sus constantes físicas y clínicas se inyectan en los simuladores:
+Para garantizar consistencia biológica, las características clínicas e infectivas intrínsecas de cada patógeno se definen bajo la estructura inmutable `VirusProfile`. Al seleccionar un virus del catálogo, todas sus constantes físicas y de letalidad se inyectan en los simuladores. 
 
-| Patógeno | Tolerancia ($\tau_{max}$) | Radio Aerosol ($\ell$) | Decaimiento ($\delta_{ext}$) | Incubación ($k_E, p_E$) | Letalidad ($\lambda$) | Inmunidad ($\mu_R, M_R$) |
-|---|---|---|---|---|---|---|
-| **Sarampión** | Baja ($2.0$) | Muy Alto ($4.0$ m) | Lento ($0.3$) | $k=2, p=0.1$ (~18 días) | Alta ($7.0$) | Vitalicia (~300 años) |
-| **COVID-19 Delta** | Media ($6.0$) | Alto ($2.5$ m) | Medio ($1.5$) | $k=2, p=0.4$ (~3 días) | Media ($5.0$) | Corta (~120 días) |
-| **Influenza Estacional** | Alta ($15.0$) | Bajo ($1.2$ m) | Rápido ($2.5$) | $k=2, p=0.6$ (~1.3 días) | Baja ($2.5$) | Media (~365 días) |
+A continuación se detalla la descripción conceptual y la parametrización de los patógenos modelados:
+
+#### 3.1 Sarampión (Measles)
+* **Descripción Conceptual:** Es la enfermedad viral de máxima contagiosidad humana por vía aérea. Se transmite a través de aerosoles extremadamente finos ($<5\mu\text{m}$) que quedan suspendidos en el aire y viajan largas distancias. Su dosis infectiva mínima es minúscula y genera inmunidad de por vida.
+* **Ecuaciones y Parámetros:**
+  * **Radio de Aerosol ($\ell = 4.0$ m):** Define una pluma de propagación espacial de largo alcance.
+  * **Decaimiento Lento ($\delta_{cerrado} = 0.15$):** Refleja la estabilidad del virus en interiores, permaneciendo viable más de 2 horas en aire estancado.
+  * **Tolerancia Mínima ($\tau_{max} = 2.0$):** El umbral infeccioso es bajísimo, garantizando contagio casi inmediato al cruzarse con la pluma de aerosol.
+  * **Inmunidad Permanente ($\mu_R = 36500$):** Recuperados permanecen en $R$ de por vida (inmunidad adquirida robusta).
+
+#### 3.2 COVID-19 Delta (SARS-CoV-2 B.1.617.2)
+* **Descripción Conceptual:** Variante caracterizada por una alta replicación viral y transmisión predominantemente aérea por aerosoles mixtos. Presenta fenómenos de superpropagación en espacios cerrados mal ventilados y pérdida de inmunidad acelerada (waning).
+* **Ecuaciones y Parámetros:**
+  * **Radio de Aerosol ($\ell = 2.5$ m):** Alcance espacial intermedio.
+  * **Decaimiento en Interiores ($\delta_{cerrado} = 0.5$):** Mayor viabilidad y persistencia en interiores en comparación con el exterior ($\delta_{ext} = 1.5$).
+  * **Tasa de Letalidad Moderada ($\lambda = 3.5$):** Curva logística de muerte sensible al daño acumulado por carga viral (AUC).
+  * **Pérdida de Inmunidad Corta ($\mu_R = 120$):** Simula el decaimiento de anticuerpos a los 4 meses post-infección.
+
+#### 3.3 Influenza Estacional (H3N2/H1N1)
+* **Descripción Conceptual:** Gripe común autolimitada. Se transmite principalmente a través de gotas grandes de saliva exhaladas al toser o estornudar, limitando su alcance espacial directo. Requiere una alta dosis de exposición y el virus es muy lábil a condiciones ambientales externas.
+* **Ecuaciones y Parámetros:**
+  * **Radio de Aerosol Corto ($\ell = 1.2$ m):** El contagio se acota al contacto cercano (gotas pesadas).
+  * **Inactivación Rápida ($\delta_{ext} = 4.0$):** El virus se inactiva rápidamente al salir del huésped, especialmente en exteriores ($\delta_{abierto} = 8.0$).
+  * **Tolerancia Elevada ($\tau_{max} = 15.0$):** Se requiere inhalar una cantidad masiva de viriones para superar la inmunidad de barrera inicial.
+
+#### 3.4 Gripe Pandémica 2009 (H1N1)
+* **Descripción Conceptual:** Cepa pandémica con un crecimiento explosivo inicial debido a la falta de inmunidad previa en población joven. Transmisión moderada y letalidad general baja, pero con propagación comunitaria veloz.
+* **Ecuaciones y Parámetros:**
+  * **Incubación Corta ($k_E = 2, p_E = 0.5$):** Periodo de latencia promedio de solo 2 días, facilitando un crecimiento exponencial acelerado de la curva epidemiológica.
+  * **Baja Letalidad ($\lambda = 0.2$):** Probabilidad de transición a fallecido ($D$) muy reducida.
+
+#### 3.5 Ébola (Ebolavirus cepa Zaire)
+* **Descripción Conceptual:** Fiebre hemorrágica viral de extrema letalidad. No se transmite por el aire en condiciones naturales; el contagio requiere contacto físico directo con fluidos corporales infectados (sangre, sudor, etc.).
+* **Ecuaciones y Parámetros:**
+  * **Radio de Aerosol Mínimo ($\ell = 0.25$ m):** Modela la transmisión exclusivamente por contacto directo o salpicadura en proximidad absoluta.
+  * **Letalidad Extrema ($\lambda = 12.0$):** La pendiente logística es masiva, disparando la mortalidad del agente enfermo a un rango del 50% al 90% según su inmunidad adaptativa.
+  * **Tolerancia Alta ($\tau_{max} = 28.0$):** Refleja la barrera de contagio en ausencia de contacto húmedo directo.
+
+#### 3.6 Tuberculosis (Mycobacterium tuberculosis DS)
+* **Descripción Conceptual:** Infección bacteriana crónica de progresión lenta y alta persistencia ambiental. Se propaga por núcleos goticulares finos que resisten la luz solar y la desecación durante horas o días.
+* **Ecuaciones y Parámetros:**
+  * **Persistencia Extrema ($\delta_{cerrado} = 0.05$):** La bacteria permanece suspendida y viable en espacios cerrados sin ventilación por periodos prolongados.
+  * **Incubación de Larga Latencia ($k_E = 4, p_E = 0.12$):** Periodo promedio en estado expuesto ($E$) de ~29 días (simulando la lenta transición a tuberculosis pulmonar activa).
+  * **Alta Resistencia Exterior ($\delta_{ext} = 0.08$):** La bacteria sobrevive significativamente fuera del huésped.
+
+#### 3.7 VIH/SIDA
+* **Descripción Conceptual:** Infección viral crónica caracterizada por el debilitamiento progresivo y permanente del sistema inmune (destrucción de linfocitos T CD4+). No existe recuperación natural y el contagio es únicamente por fluidos.
+* **Ecuaciones y Parámetros:**
+  * **Sin Recuperación ($\mu_R = 0$ y $M_R = 0$):** Transición a recuperado desactivada.
+  * **Latencia de Años ($k_E = 10, p_E = 0.001$):** Incubación promedio extremadamente larga para simular la fase de latencia asintomática de años antes de manifestarse la enfermedad.
+  * **Contacto Directo ($\ell = 0.0$):** Sin dispersión aérea alguna.
+
+#### 3.8 SARS-CoV-1 (2003)
+* **Descripción Conceptual:** Coronavirus con alta patogenicidad y letalidad. Se asocia fuertemente con eventos de superpropagación en entornos hospitalarios (transmisión nosocomial), facilitando su contención epidemiológica temprana mediante el aislamiento riguroso de casos clínicos evidentes.
+* **Ecuaciones y Parámetros:**
+  * **Radio Intermedio ($\ell = 2.0$ m):** Transmisión por proximidad física estrecha.
+  * **Letalidad Alta ($\lambda = 6.0$):** CFR global de referencia superior al 9%, provocando un colapso clínico rápido.
 
 ---
 
