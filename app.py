@@ -19,7 +19,7 @@ from Continuo.continuous_simulation import ContinuousSEIRSDSimulation
 from Discreto.discrete_simulation import DiscreteSEIRSDSimulation
 import Continuo.plotly_animacion as plotly_continuo
 import Discreto.plotly_animacion as plotly_discreto
-from Continuo.virus_factory import (
+from virus_factory import (
     VIRUS_CATALOG, VirusProfile, apply_to_simulation, PARAMETER_REFERENCE
 )
 
@@ -223,6 +223,126 @@ else:
             format="%.2f"
         )
         eta_hig = st.slider("Higiene Personal (eta_hig - eleva umbral)", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
+    _VIRUS_LABELS: dict[str, str] = {
+        "custom"        : "Personalizado  (ajustar sliders manualmente)",
+        "measles"       : "Sarampion  |  R0~15  |  aerosol fino  |  vitalicio",
+        "covid19_delta" : "COVID-19 Delta  |  R0~5.5  |  aerosol mixto  |  waning 4m",
+        "influenza"     : "Influenza Estacional  |  R0~1.3  |  gotas  |  CFR baja",
+        "h1n1_2009" : "Gripe Pandémica 2009 (porcina)  |  R0~1.5  |  alta transmisión jóvenes  |  vacunación",
+        "ebola"         : "Ebola Zaire  |  R0~2  |  contacto directo  |  CFR 50%+",
+        "tuberculosis"  : "Tuberculosis  |  R0~10  |  aerosol persistente",
+        "hiv" : "VIH/SIDA  |  R0~2-5  |  transmisión fluida  |  fase crónica",
+        "sars_2003" : "SARS-CoV-1 (2003)  |  R0~2-3  |  clínico/hospitalario  |  letalidad alta",
+        "junin" : "Fiebre Hemorrágica Arg.  |  vectorial/contacto  |  región pampeana  |  suero inmune"
+
+    }
+    _LABEL_TO_KEY: dict[str, str] = {v: k for k, v in _VIRUS_LABELS.items()}
+    with st.sidebar.expander("☣️ Parámetros Físicos del Virus", expanded=True):
+
+        st.markdown("**🦠 Virus Predefinido**")
+        selected_label: str = st.selectbox(
+            label="Patogeno",
+            options=list(_VIRUS_LABELS.values()),
+            index=0,
+            key="virus_preset",
+            help=(
+                "Carga automaticamente todos los parametros fisicos calibrados "
+                "desde la literatura medica. Elige 'Personalizado' para ajustar "
+                "los sliders libremente."
+            ),
+        )
+        selected_key: str = _LABEL_TO_KEY[selected_label]
+        is_custom: bool   = (selected_key == "custom")
+        active_profile: VirusProfile | None = (
+            None if is_custom else VIRUS_CATALOG[selected_key]
+        )
+
+        if active_profile is not None:
+            st.info(
+                f"**{active_profile.name}**  \n"
+                f"R0 ref: `{active_profile.r0_ref}`  \n"
+                f"CFR ref: `{active_profile.cfr_ref}`  \n"
+                f"Incubacion media: `{active_profile.mean_incubation_days:.1f} dias`"
+            )
+
+        def _pval(attr: str, fallback: float) -> float:
+            """Retorna valor del perfil activo, o fallback si es personalizado."""
+            if active_profile is not None:
+                return float(getattr(active_profile, attr))
+            return fallback
+
+        st.markdown("---")
+        tau_max: float = st.slider(
+            "Dosis Tolerancia Maxima (tau_max)",
+            min_value=0.5, max_value=50.0,
+            value=_pval("tau_max", 20.0),
+            step=0.5, disabled=not is_custom, key="slider_tau_max",
+            help="Umbral de dosis acumulada. Bajo = muy contagioso.",
+        )
+        ell: float = st.slider(
+            "Radio Aerosol (ell, metros)",
+            min_value=0.1, max_value=6.0,
+            value=_pval("ell", 1.0),
+            step=0.1, disabled=not is_custom, key="slider_ell",
+        )
+        delta_ext: float = st.slider(
+            "Decaimiento — Transito/Calles (delta_ext, /dia)",
+            min_value=0.01, max_value=15.0,
+            value=_pval("delta_ext", 1.0),
+            step=0.05, disabled=not is_custom, key="slider_delta_ext",
+        )
+        delta_cerrado: float = st.slider(
+            "Decaimiento — Espacios Cerrados (delta_cerrado, /dia)",
+            min_value=0.01, max_value=10.0,
+            value=_pval("delta_cerrado", 0.2),
+            step=0.05, disabled=not is_custom, key="slider_delta_cerrado",
+            help="Hogar, escuela, oficina (menor ventilacion).",
+        )
+        delta_abierto: float = st.slider(
+            "Decaimiento — Espacios Abiertos (delta_abierto, /dia)",
+            min_value=0.1, max_value=20.0,
+            value=_pval("delta_abierto", 4.0),
+            step=0.1, disabled=not is_custom, key="slider_delta_abierto",
+            help="Plazas, mercados, parques (UV, viento).",
+        )
+        lam: float = st.slider(
+            "Pendiente Letalidad (lambda)",
+            min_value=0.5, max_value=20.0,
+            value=_pval("lam", 5.0),
+            step=0.5, disabled=not is_custom, key="slider_lam",
+        )
+        st.markdown("**Incubacion NegBin(k_E, p_E)**")
+        col_ke, col_pe = st.columns(2)
+        with col_ke:
+            k_E: int = int(st.number_input(
+                "k_E", min_value=1, max_value=20,
+                value=int(_pval("k_E", 2)),
+                step=1, disabled=not is_custom, key="slider_k_E",
+            ))
+        with col_pe:
+            p_E: float = float(st.number_input(
+                "p_E", min_value=0.05, max_value=0.99,
+                value=_pval("p_E", 0.5),
+                step=0.01, format="%.2f",
+                disabled=not is_custom, key="slider_p_E",
+            ))
+        st.caption(f"Incubacion media: {k_E * (1.0 - p_E) / p_E:.1f} dias")
+        mu_R: float = st.slider(
+            "Inmunidad Media (mu_R, dias)",
+            min_value=1.0, max_value=36500.0,
+            value=_pval("mu_R", 180.0),
+            step=1.0, format="%.0f",
+            disabled=not is_custom, key="slider_mu_R",
+        )
+        M_R: float = st.slider(
+            "Cap Inmunidad (M_R, dias)",
+            min_value=1.0, max_value=36500.0,
+            value=_pval("M_R", 150.0),
+            step=1.0, format="%.0f",
+            disabled=not is_custom, key="slider_M_R",
+        )
+        with st.expander("Tabla de referencia de patogenos", expanded=False):
+            st.code(PARAMETER_REFERENCE, language=None)
 
 
 # Helper analysis functions

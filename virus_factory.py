@@ -518,24 +518,21 @@ def get_profile(key: str) -> VirusProfile:
     return VIRUS_CATALOG[key_lower]
 
 
-# Tabla de referencia ASCII (compatible con cualquier encoding)
-PARAMETER_REFERENCE: str = """
-+==============+=========+=======+==========+=======+=========+==============+
-| Enfermedad   | tau_max |  ell  | delta_ext|  lam  | Inc (d) |  mu_R (dias) |
-+==============+=========+=======+==========+=======+=========+==============+
-| Sarampion    |   2.0   | 4.0 m | 0.30/dia |  1.5  |  10.0   |   36 500     |
-| COVID Delta  |   6.0   | 2.5 m | 1.50/dia |  3.5  |   5.0   |     120      |
-| Influenza    |  15.0   | 1.2 m | 4.00/dia |  0.8  |   2.0   |     150      |
-| Ebola Zaire  |  28.0   | 0.25m | 8.00/dia | 12.0  |   9.0   |     730      |
-| Tuberculosis |   3.0   | 3.5 m | 0.08/dia |  4.5  |  29.3   |   1 825      |
-+==============+=========+=======+==========+=======+=========+==============+
-tau_max en escala interna del motor (tau_infection = omega_in * tau_max).
-"""
+from tabulate import tabulate
 
+def get_parameter_table():
+    headers = ["Enfermedad", "tau_max", "ell (m)", "delta_ext", "lam", "Inc (d)", "mu_R (d)"]
+    data = [
+        ["Sarampion",    2.0,  4.0,  0.30, 1.5,  10.0,  36500],
+        ["COVID Delta",  6.0,  2.5,  1.50, 3.5,  5.0,   120],
+        ["Influenza",    15.0, 1.2,  4.00, 0.8,  2.0,   150],
+        ["Ebola Zaire",  28.0, 0.25, 8.00, 12.0, 9.0,   730],
+        ["Tuberculosis", 3.0,  3.5,  0.08, 4.5,  29.3,  1825],
+        ["FHA (Junin)",  30.0, 0.4,  2.00, 9.0,  8.0,   3650]
+    ]
+    
+    # "fancy_grid" es el estilo mas profesional y estetico
+    return tabulate(data, headers=headers, tablefmt="fancy_grid", floatfmt=".2f")
 
-if __name__ == "__main__":
-    print(PARAMETER_REFERENCE)
-    print("\n=== Perfiles del catalogo ===\n")
-    for key in list_diseases():
-        print(VIRUS_CATALOG[key])
-        print()
+# Para que no rompas tu código anterior, podés dejar esto:
+PARAMETER_REFERENCE = get_parameter_table()
