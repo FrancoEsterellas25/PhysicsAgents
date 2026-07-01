@@ -351,12 +351,16 @@ def calcular_kaplan_meier(t_inf_arr, t_max):
         probs.append(float(surv_prob))
     return np.array(times), np.array(probs)
 
-def estimar_r0_exacto(tiempo, infectados, tg):
-    ventana = (tiempo >= 1) & (tiempo <= 10) & (infectados > 0)
+def estimar_r0_exacto(tiempo, infectados, tg, k_E=2, p_E=0.5):
+    # Ventana dinámica basada en el tiempo de incubación medio del patógeno
+    incubation_days = k_E * (1.0 - p_E) / p_E
+    t_start = int(np.ceil(incubation_days)) + 1
+    
+    ventana = (tiempo >= t_start) & (tiempo <= t_start + 10) & (infectados > 0)
     x = tiempo[ventana]
-    y = np.log(infectados[ventana])
     if len(x) < 2:
         return 1.0, 0.0
+    y = np.log(infectados[ventana])
     slope, _ = np.polyfit(x, y, 1)
     r = max(0.0, slope)
     r0 = np.exp(r * tg)
@@ -500,7 +504,7 @@ if st.button("🚀 Ejecutar Simulación", use_container_width=True):
     
     # Generation time
     tg = 2.0 + (1.0 / 0.1)
-    r0, r_rate = estimar_r0_exacto(tiempos, np.array(conteos_I), tg=tg)
+    r0, r_rate = estimar_r0_exacto(tiempos, np.array(conteos_I), tg=tg, k_E=sim.k_E, p_E=sim.p_E)
     
     # Kaplan-Meier survival curves
     df_inf = df_dinamico.filter(pl.col("estado").is_in([1, 2]))
