@@ -1,21 +1,21 @@
 # Modelo Epidemiológico SEIRS-D
 ## Arquitectura Matemática Unificada
-### Enfoques Discreto, Continuo y de Redes con Núcleo Biológico Común (SDE-OU)
+### Enfoques Discreto y Continuo con Núcleo Biológico Común (SDE-OU)
 
 ---
 
 ## Resumen de Arquitectura
 
-La tríada metodológica comparte un núcleo biológico común regido por Ecuaciones Diferenciales Estocásticas (SDE-OU), pero difieren en su mecanismo de contagio.
+La dualidad metodológica comparte un núcleo biológico común regido por Ecuaciones Diferenciales Estocásticas (SDE-OU), pero difieren en su mecanismo de contagio.
 
-| Componente | Enfoque Discreto (Grilla) | Enfoque Continuo (Browniano) | Enfoque de Redes (Grafos) |
-|---|---|---|---|
-| Mecanismo de contagio | Contacto directo agente-a-agente vía función de Hill σ(Vⱼ) con V₅₀ indexado por ωᵢₙ,ᵢ | Campo ambiental de inóculo Dⱼ(t) ≥ τᵢ | Transmisión por pares acoplados vía aristas ponderadas wᵢⱼ · σ(Vⱼ, ωᵢₙ,ᵢ) en grafo disperso |
-| Rol de la carga viral Vⱼ | Entra en σ(Vⱼ) como probabilidad de transmisión directa | Alimenta la emisión de inóculo Iⱼ,ₜ al campo ambiental | Modula la probabilidad de contagio instantánea sobre la arista social activa |
-| Umbral de infección | Probabilidad por paso de tiempo — V₅₀(ωᵢₙ,ᵢ) heterogéneo por celda susceptible | τᵢ = ωᵢₙ,ᵢ · τ_max (derivado directamente de la cópula) | Probabilidad por paso de tiempo — V₅₀(ωᵢₙ,ᵢ) heterogéneo por nodo receptor |
-| Dinámica viral interna | SDE-OU con atractor dinámico μ(τᵢ) y θ(τᵢ, ωₐd) — núcleo biológico común | SDE-OU con atractor dinámico μ(τᵢ) y θ(τᵢ, ωₐd) — núcleo biológico común | SDE-OU con atractor dinámico μ(τᵢ) y θ(τᵢ, ωₐd) — núcleo biológico común |
-| Cinemática de agentes | Celdas estáticas — grilla fija (cuadrada o hexagonal) | Partículas brownianas con difusividad acoplada a Vᵢ | Nula en el espacio euclidiano — posiciones topológicas fijas sobre lista de adyacencia |
-| Complejidad computacional | O(N · \|Nᵢ\|) con vecindad Moore o von Neumann | O(N log N) con árbol k-d para kernel de distancia | O(\|I(t)\| · ⟨k⟩) mediante recorrido de aristas activas en formato CSR |
+| Componente | Enfoque Discreto (Grilla) | Enfoque Continuo (Browniano) |
+|---|---|---|
+| Mecanismo de contagio | Contacto directo agente-a-agente vía función de Hill σ(Vⱼ) con V₅₀ indexado por ωᵢₙ,ᵢ | Campo ambiental de inóculo Dⱼ(t) ≥ τᵢ |
+| Rol de la carga viral Vⱼ | Entra en σ(Vⱼ) como probabilidad de transmisión directa | Alimenta la emisión de inóculo Iⱼ,ₜ al campo ambiental |
+| Umbral de infección | Probabilidad por paso de tiempo — V₅₀(ωᵢₙ,ᵢ) heterogéneo por celda susceptible | τᵢ = ωᵢₙ,ᵢ · τ_max (derivado directamente de la cópula) |
+| Dinámica viral interna | SDE-OU con atractor dinámico μ(τᵢ) y θ(τᵢ, ωₐd) — núcleo biológico común | SDE-OU con atractor dinámico μ(τᵢ) y θ(τᵢ, ωₐd) — núcleo biológico común |
+| Cinemática de agentes | Celdas estáticas — grilla fija (cuadrada o hexagonal) | Partículas brownianas con difusividad acoplada a Vᵢ |
+| Complejidad computacional | O(N · \|Nᵢ\|) con vecindad Moore o von Neumann | O(N log N) con árbol k-d para kernel de distancia |
 
 ---
 
@@ -261,52 +261,6 @@ La rigidez numérica del sistema acoplado (viral + espacial) se resuelve con Ope
 
 ---
 
-## Parte V: Mecanismo de Contagio — Enfoque de Redes Complejas (Grafos)
-
-En el enfoque de redes, el espacio físico euclidiano es abstraído por completo y la población se estructura sobre un grafo disperso $G=(\mathcal{V},\mathcal{E})$. Cada agente es un vértice $i\in\mathcal{V}$ y sus vínculos de transmisión potenciales son aristas ponderadas $(i,j)\in\mathcal{E}$. Se conserva íntegramente el Núcleo Biológico Universal (SDE-OU) y la parametrización compartimental SEIRS-D, desplazando la heterogeneidad del contagio hacia la topología estructural de interacciones sociales.
-
-### 1. Matriz de Adyacencia Ponderada y Topología
-
-La conectividad poblacional queda formalizada por una matriz dispersa $\mathbf{W}\in[0,1]^{N\times N}$, donde cada elemento $w_{ij}$ codifica la intensidad relativa, frecuencia o cercanía del contacto entre el agente $i$ y el agente $j$ ($w_{ij}=0\implies$ ausencia de vínculo).
-
-A diferencia del enfoque discreto —donde el grado nodal está acotado rígidamente por la geometría ($\langle k\rangle\le 8$)—, la abstracción en grafos permite capturar distribuciones de grado empíricas $P(k)$ de cola pesada, posibilitando la emergencia endógena de eventos de superpropagación social sin alterar las ecuaciones virales del individuo.
-
-### 2. Transmisibilidad a Través de Aristas
-
-La transmisión opera por pares acoplados. La probabilidad de que un agente infectado $j$ transmita el patógeno a un vecino susceptible $i$ en un paso $\Delta t$ es el producto del peso del vínculo $w_{ij}$ por la función de Hill sigmoide endogenizada:
-
-$$\mathcal{T}_{j\to i}=w_{ij}\cdot\sigma(V_j,\omega_{in,i})=w_{ij}\cdot\left[\frac{V_j^n}{V_j^n+V_{50}(\omega_{in,i})^n}\right]$$
-
-$$V_{50}(\omega_{in,i})=V_{50,basal}\cdot(1+\gamma\cdot\omega_{in,i})$$
-
-**Justificación biológico-topológica:** Un individuo con alta barrera innata ($\omega_{in,i}\to 1$) eleva su $V_{50}$, neutralizando contactos sociales de peso bajo o efímeros ($w_{ij}\ll 1$). Sin embargo, si ese mismo receptor mantiene un vínculo estrecho ($w_{ij}\to 1$) con un emisor en el pico absoluto de su viremia ($V_j\gg V_{50}$), el corchete tiende a la unidad y la probabilidad de contagio queda dominada puramente por la cercanía estructural del vínculo.
-
-### 3. Transición S → E en Red
-
-Bajo la presunción de independencia estocástica entre los contactos concurrentes del agente $i$ durante el intervalo $[t,t+\Delta t)$, la probabilidad conjunta de transición al compartimento expuesto resulta:
-
-$$P(S_i\to E_i)=1-\prod_{j\in\mathcal{N}_i^I}\bigl(1-w_{ij}\cdot\sigma(V_j,\omega_{in,i})\bigr)$$
-
-donde $\mathcal{N}_i^I=\{j\in\mathcal{V}:w_{ij}>0\;\land\;\text{Estado}_j=I\}$ representa el vecindario infeccioso activo del nodo $i$.
-
-### 4. Generadores Topológicos Empíricos
-
-| Topología de Red | Algoritmo Generador | Distribución de Grados P(k) | Propiedad Epidemiológica Clave |
-|---|---|---|---|
-| **Erdős-Rényi (ER)** | Enlace independiente con probabilidad fija p | Poisson | Equivalente asintótico a mezcla homogénea (*well-mixed*). Umbral epidémico trivial. |
-| **Watts-Strogatz (WS)** | Re-cableado aleatorio de anillo regular (prob. β_ws) | Unimodal con pico | Alta transitividad local (clústers cerrados) combinada con caminos geodésicos cortos. |
-| **Barabási-Albert (BA)** | Crecimiento con conexión preferencial lineal | Ley de Potencia (~k⁻ᵞ) | Genera **hubs** sistémicos; extremada vulnerabilidad ante ataques dirigidos a nodos centrales. |
-
-### 5. Complejidad y Ventaja Vectorial
-
-Al almacenar el grafo mediante Listas de Adyacencia Comprimidas (formato CSR - *Compressed Sparse Row*), el motor de simulación omite el barrido de combinaciones nulas. El costo por paso temporal obedece estrictamente al volumen de aristas activas salientes del compartimento infeccioso:
-
-$$\mathcal{O}\left(|I(t)|\cdot\langle k\rangle\right)$$
-
-En regímenes de baja prevalencia ($|I(t)|\ll N$), esta complejidad escala órdenes de magnitud por debajo del árbol k-d continuo $\mathcal{O}(N\log N)$ y del barrido de grilla estática $\mathcal{O}(N\cdot|\mathcal{N}|)$.
-
----
-
 ## Parte VI: Análisis de Datos y Métricas de Inferencia
 
 El enfoque orientado a datos (*Data-Oriented*) permite tratar la simulación basada en agentes como un experimento biológico clínico. Se aplican técnicas de bioestadística y análisis de sensibilidad global para extraer conclusiones robustas sobre la propagación y la letalidad.
@@ -421,9 +375,7 @@ La elección de vecindad (Moore, Von Neumann, hexagonal) afecta el umbral epidé
 
 El argumento de la función logística (AUCᵢ − ωₐd,ᵢ) mezcla magnitudes de distinta escala: AUCᵢ crece con la duración de la infección (potencialmente >> 1) mientras que ωₐd,ᵢ ∈ [0, 1]. Es imprescindible normalizar AUCᵢ al rango unitario — por ejemplo, dividiendo por AUC_max esperado bajo el patógeno simulado — antes de calibrar λ, o absorber la escala en λ de forma explícita durante la calibración.
 
-### 7. Fragilidad ante Hubs y Dinámica de Percolación (Redes)
 
-En topologías libres de escala (Barabási-Albert), la varianza del grado nodal diverge ($\langle k^2 \rangle \to \infty$). Esto vuelve al modelo extremadamente sensible a la tasa de aclaramiento viral de los superpropagadores: si un nodo central adquiere una trayectoria de resolución lenta ($\omega_{ad} \to 0$), sostendrá la curva epidémica de forma casi determinista. Se recomienda controlar estrictamente la centralidad de grado del grupo semilla $I_0$.
 
 ---
 
@@ -459,9 +411,7 @@ Una vez fijado Ωᵢ, las funciones de acoplamiento deterministas configuran el 
 - Umbral de tolerancia acumulada: τᵢ = ωᵢₙ,ᵢ · τ_max
 - Coordenadas iniciales continuas: **x**ᵢ(0) ~ Uniforme([0, L]²)
 
-**Entorno de Redes:**
-- Umbral de Hill receptor: V₅₀,ᵢ = V₅₀,basal · (1 + γ · ωᵢₙ,ᵢ)
-- Asignación topológica: mapeo del agente i como vértice sobre la matriz dispersa W según la distribución de grados P(k) seleccionada.
+
 
 ### 3. Vector de Estado Inicial
 
@@ -627,12 +577,4 @@ A continuación se detalla la descripción conceptual y la parametrización de l
 | Umbral de inhibición motora | V_sint | [0.3, 0.7] | Carga viral al 50% de inhibición de D_esp |
 | Exponente de Hill (inhibición motora) | n_mov | [1, 4] | Agudeza de inhibición cinemática |
 | Dosis máxima de infección | τ_max | Variable por virus | Dosis máxima acumulada; τᵢ = ωᵢₙ,ᵢ · τ_max |
-
-### Parámetros Exclusivos del Enfoque de Redes Complejas
-
-| Parámetro | Símbolo | Rango típico | Descripción |
-|---|---|---|---|
-| Matriz de pesos de adyacencia | **W** | [0, 1] | Intensidad normalizada del vínculo social entre nodos i, j |
-| Grado medio poblacional | ⟨k⟩ | [4, 30] | Número promedio de contactos incidentes por agente |
-| Exponente de ley de potencia (BA) | γ_ba | [2.1, 3.0] | Caída de probabilidad de hubs en topologías scale-free |
-| Probabilidad de re-cableado (WS) | β_ws | [0.01, 0.2] | Controla la transición entre orden cristalino y caos small-world |
+
