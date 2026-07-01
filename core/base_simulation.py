@@ -41,6 +41,10 @@ class BaseSEIRSDSimulation:
         self.w2 = 0.4
         self.lam = 5.0
         self.tau_max = 20.0
+        self.ell = 1.0
+        self.delta_ext = 1.0
+        self.delta_cerrado = 0.2
+        self.delta_abierto = 4.0
         # Normalización analítica del AUC (se calcula en Fase 0 tras posibles cambios de hiperparámetros)
         self.auc_norm_factor = None
         

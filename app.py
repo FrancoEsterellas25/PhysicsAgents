@@ -52,9 +52,9 @@ st.sidebar.markdown("### 🎛️ Configuración del Escenario")
 # Dynamic configuration based on selected approach
 if enfoque == "Continuo (Espacio Físico / Langevin)":
     with st.sidebar.expander("👥 Demografía y Simulación", expanded=True):
-        N_agentes = st.slider("Tamaño Población (N)", min_value=100, max_value=1000, value=500, step=50)
-        L_espacio = st.slider("Dimensión del Espacio (L)", min_value=20.0, max_value=100.0, value=50.0, step=5.0)
-        dias_simulacion = st.slider("Duración (Días)", min_value=10, max_value=45, value=25, step=5)
+        N_agentes = st.slider("Tamaño Población (N)", min_value=100, max_value=1000, value=400, step=50)
+        L_espacio = st.slider("Dimensión del Espacio (L)", min_value=20.0, max_value=100.0, value=20.0, step=5.0)
+        dias_simulacion = st.slider("Duración (Días)", min_value=10, max_value=150, value=30, step=5)
         seed_I = st.slider("Infectados Iniciales", min_value=1, max_value=20, value=5, step=1)
 
     with st.sidebar.expander("🚶 Movilidad y Contactos", expanded=True):
@@ -64,12 +64,17 @@ if enfoque == "Continuo (Espacio Físico / Langevin)":
         )
         hubs_activos = (mov_tipo == "Hubs Cerrados/Abiertos (Escuela, Oficina, Súper, Centro)")
         mov_libre = not hubs_activos
-        C_DS = st.slider("Distanciamiento Social (Cumplimiento C_DS)", min_value=0.0, max_value=1.0, value=0.6, step=0.1)
 
     with st.sidebar.expander("🛡️ Medidas de Intervención", expanded=True):
-        enable_quarantine = st.checkbox("Activar Cuarentenas Domésticas", value=True)
+        enable_quarantine = st.checkbox("Activar Cuarentenas Domésticas", value=False)
         quarantine_trigger_pct = st.slider(
             "Gatillo Cuarentena (% Infectados Activos)",
+            min_value=0.01, max_value=0.30, value=0.05, step=0.01,
+            format="%.2f"
+        )
+        C_DS = st.slider("Distanciamiento Social (Cumplimiento C_DS)", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
+        ds_trigger_pct = st.slider(
+            "Gatillo Distanciamiento (% Infectados Activos)",
             min_value=0.01, max_value=0.30, value=0.05, step=0.01,
             format="%.2f"
         )
@@ -134,14 +139,14 @@ if enfoque == "Continuo (Espacio Físico / Langevin)":
         tau_max: float = st.slider(
             "Dosis Tolerancia Maxima (tau_max)",
             min_value=0.5, max_value=50.0,
-            value=_pval("tau_max", 20.0),
+            value=_pval("tau_max", 8.0),
             step=0.5, disabled=not is_custom, key="slider_tau_max",
             help="Umbral de dosis acumulada. Bajo = muy contagioso.",
         )
         ell: float = st.slider(
             "Radio Aerosol (ell, metros)",
             min_value=0.1, max_value=6.0,
-            value=_pval("ell", 1.0),
+            value=_pval("ell", 2.0),
             step=0.1, disabled=not is_custom, key="slider_ell",
         )
         delta_ext: float = st.slider(
@@ -210,17 +215,23 @@ else:
         N_agentes = grid_side * grid_side
         st.info(f"Población total resultante: {N_agentes} agentes")
         topology = st.selectbox("Topología de Vecindad", options=["moore", "von_neumann", "hexagonal"])
-        dias_simulacion = st.slider("Duración (Días)", min_value=10, max_value=100, value=45, step=5)
+        dias_simulacion = st.slider("Duración (Días)", min_value=10, max_value=150, value=45, step=5)
         seed_I = st.slider("Infectados Iniciales", min_value=1, max_value=20, value=5, step=1)
 
     # Section 2: Distanciamiento y Contención
     with st.sidebar.expander("🛡️ Medidas de Intervención", expanded=True):
-        C_DS = st.slider("Cumplimiento Distanciamiento Social (C_DS)", min_value=0.0, max_value=1.0, value=0.5, step=0.1)
-        enable_quarantine = st.checkbox("Activar Cuarentenas Domésticas", value=True)
+        enable_quarantine = st.checkbox("Activar Cuarentenas Domésticas", value=False)
         quarantine_trigger_pct = st.slider(
             "Gatillo Cuarentena (% Infectados Activos)",
             min_value=0.01, max_value=0.30, value=0.05, step=0.01,
             format="%.2f"
+        )
+        C_DS = st.slider("Cumplimiento Distanciamiento Social (C_DS)", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
+        ds_trigger_pct = st.slider(
+            "Gatillo Distanciamiento (% Infectados Activos)",
+            min_value=0.01, max_value=0.30, value=0.05, step=0.01,
+            format="%.2f",
+            key="ds_trigger_discrete"
         )
         eta_hig = st.slider("Higiene Personal (eta_hig - eleva umbral)", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
     _VIRUS_LABELS: dict[str, str] = {
@@ -275,36 +286,11 @@ else:
         tau_max: float = st.slider(
             "Dosis Tolerancia Maxima (tau_max)",
             min_value=0.5, max_value=50.0,
-            value=_pval("tau_max", 20.0),
+            value=_pval("tau_max", 8.0),
             step=0.5, disabled=not is_custom, key="slider_tau_max",
             help="Umbral de dosis acumulada. Bajo = muy contagioso.",
         )
-        ell: float = st.slider(
-            "Radio Aerosol (ell, metros)",
-            min_value=0.1, max_value=6.0,
-            value=_pval("ell", 1.0),
-            step=0.1, disabled=not is_custom, key="slider_ell",
-        )
-        delta_ext: float = st.slider(
-            "Decaimiento — Transito/Calles (delta_ext, /dia)",
-            min_value=0.01, max_value=15.0,
-            value=_pval("delta_ext", 1.0),
-            step=0.05, disabled=not is_custom, key="slider_delta_ext",
-        )
-        delta_cerrado: float = st.slider(
-            "Decaimiento — Espacios Cerrados (delta_cerrado, /dia)",
-            min_value=0.01, max_value=10.0,
-            value=_pval("delta_cerrado", 0.2),
-            step=0.05, disabled=not is_custom, key="slider_delta_cerrado",
-            help="Hogar, escuela, oficina (menor ventilacion).",
-        )
-        delta_abierto: float = st.slider(
-            "Decaimiento — Espacios Abiertos (delta_abierto, /dia)",
-            min_value=0.1, max_value=20.0,
-            value=_pval("delta_abierto", 4.0),
-            step=0.1, disabled=not is_custom, key="slider_delta_abierto",
-            help="Plazas, mercados, parques (UV, viento).",
-        )
+        # Los parámetros físicos (ell, delta) no se muestran en discreto porque no aplican a la grilla
         lam: float = st.slider(
             "Pendiente Letalidad (lambda)",
             min_value=0.5, max_value=20.0,
@@ -426,15 +412,28 @@ if st.button("🚀 Ejecutar Simulación", use_container_width=True):
         sim.hubs_activos = hubs_activos
         sim.movimiento_libre = mov_libre
         sim.c_DS = C_DS
+        sim.ds_trigger_pct = ds_trigger_pct
         sim.enable_quarantine = enable_quarantine
         sim.quarantine_trigger_pct = quarantine_trigger_pct
         sim.eta_hig = eta_hig
         sim.eta_em = eta_em
         sim.eta_rec = eta_rec
         sim.barbijo_cumplimiento = barbijo_cumplimiento
-        sim.tau_max = tau_max
-        sim.ell = ell
-        sim.delta_ext = delta_ext
+        # Inyectar todos los parámetros del virus
+        if active_profile is not None:
+            apply_to_simulation(sim, active_profile)
+        else:
+            sim.tau_max       = tau_max
+            sim.ell           = ell
+            sim.delta_ext     = delta_ext
+            sim.delta_cerrado = delta_cerrado
+            sim.delta_abierto = delta_abierto
+            sim.lam           = lam
+            sim.k_E           = k_E
+            sim.p_E           = p_E
+            sim.mu_R          = mu_R
+            sim.M_R           = M_R
+        
         
         base_dir = root_path / "Continuo"
         status_text.text("Simulando movimiento continuo y contagios por aerosol...")
@@ -450,9 +449,21 @@ if st.button("🚀 Ejecutar Simulación", use_container_width=True):
         
         sim.dt = 1.0
         sim.c_DS = C_DS
+        sim.ds_trigger_pct = ds_trigger_pct
         sim.enable_quarantine = enable_quarantine
         sim.quarantine_trigger_pct = quarantine_trigger_pct
         sim.eta_hig = eta_hig
+        
+        # Inyectar variables del virus al discreto (clínicas y biológicas)
+        if active_profile is not None:
+            apply_to_simulation(sim, active_profile)
+        else:
+            sim.tau_max = tau_max
+            sim.lam = lam
+            sim.k_E = k_E
+            sim.p_E = p_E
+            sim.mu_R = mu_R
+            sim.M_R = M_R
         
         base_dir = root_path / "Discreto"
         status_text.text("Simulando contagio discreto por autómatas celulares...")
@@ -598,21 +609,21 @@ if sobol_img_path.exists():
         use_container_width=True
     )
     
-    # Premium explanation block for Sobol results
     st.markdown("""
     <div style="background-color: #1E2530; padding: 20px; border-radius: 8px; border-left: 4px solid #008080; margin-top: 15px;">
-        <h4 style="color: #FFFFFF; margin-top: 0;">📖 Interpretación Científica de los Resultados de Sobol:</h4>
+        <h4 style="color: #FFFFFF; margin-top: 0;">📖 ¿Qué nos dice este análisis de sensibilidad?</h4>
+        <p style="color: #DDDDDD; font-size: 0.95rem; line-height: 1.6;">
+            El gráfico descompone qué factores causan las variaciones en la Tasa de Mortalidad de la simulación, dividiendo los resultados en dos efectos: el <b>Directo</b> (barra cian: impacto del parámetro por sí solo) y el <b>Total</b> (barra roja: impacto sumando sus interacciones con los demás).
+        </p>
         <ul style="color: #DDDDDD; font-size: 0.95rem; line-height: 1.6;">
-            <li><b>Efecto Directo (S_i - Barra Teal/Verde):</b> Mide la proporción de la varianza en la mortalidad explicada por cada parámetro de forma aislada.
-                <ul>
-                    <li>El <b>Decaimiento Viral</b> y la <b>Pendiente de Letalidad</b> tienen efectos directos detectables porque regulan directamente el volumen de contagio y la mortalidad básica.</li>
-                </ul>
+            <li><b>1. El Bloque Clínico domina el impacto directo:</b><br/>
+                <b>Pendiente (&lambda;) y Peso de Estrés (w_1):</b> Tienen los efectos directos más masivos. Una vez que el virus infecta a la población, el colapso biológico y el desenlace terminal se deciden casi linealmente por estos dos parámetros internos.
             </li>
-            <li><b>Efecto Total (S_Ti - Barra Crimson/Roja):</b> Mide el impacto acumulado del parámetro incluyendo todas sus <b>interacciones no lineales</b> con los demás.</li>
-            <li><b>Comportamiento de la Cópula (rho) (S_i ≈ 0, S_Ti ≈ 1.0):</b> 
-                Representa una <b>interacción pura de acoplamiento</b>. Cambiar la correlación de la inmunidad de la población no tiene ningún impacto directo si el virus no se propaga o si no es letal. Su relevancia biológica solo despierta en escenarios combinados con alta carga de virus y alta letalidad.
+            <li style="margin-top: 10px;"><b>2. La Cópula (&rho;) es el pilar genético real:</b><br/>
+                <b>Acoplamiento Inmune (&rho;):</b> Ya no es una variable fantasma. Su altísimo efecto directo (~0.69) demuestra que el grado de deterioro sistémico correlacionado de la población explica por sí solo la mayor parte de la varianza en la mortalidad. Su efecto total roza el 1.0 porque interactúa de forma masiva con las variables dinámicas.
             </li>
-            <li><b>Dominancia de la Biología e Interacción:</b> Las variables de letalidad y ambiente saturan su efecto total porque en un modelo dinámico espacial continuo, la mortalidad resultante es un fenómeno emergente no lineal que depende críticamente de la superposición de todos los factores.
+            <li style="margin-top: 10px;"><b>3. Las Variables Ambientales actúan como catalizadores:</b><br/>
+                <b>Radio del Aerosol (&ell;), Decaimiento (&delta;<sub>ext</sub>) y Tolerancia (&tau;<sub>max</sub>):</b> Presentan efectos directos moderados o bajos, pero efectos totales muy elevados. Esto confirma que las variables físicas del exterior no matan de forma directa, sino que regulan el volumen y la velocidad macro del contagio, delegando la letalidad última a la batalla inmunológica interna del huésped.
             </li>
         </ul>
     </div>
