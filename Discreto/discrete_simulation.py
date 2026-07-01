@@ -34,7 +34,7 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
     def _fase0_inicializacion(self, output_dir=None):
         """Cópula Gaussiana y Exportación del Mapa Estático con coordenadas."""
         super()._fase0_inicializacion(output_dir=output_dir)
-        self.v50 = self.V_50_basal * (1.0 + self.gamma_hill * self.omega_in)
+        self.v50 = self.V_50_basal * (1.0 + self.gamma_hill * self.omega_in) * (1.0 + getattr(self, 'eta_hig', 0.0))
         
         # Exportar Mapa Estático con Coordenadas (Específico de Discreto)
         base_dir = Path(output_dir) if output_dir is not None else Path(__file__).parent
@@ -53,7 +53,22 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
     def _fase2_contagio(self):
         """Contagio S -> E basado en matrices desplazadas (vecindad) con soporte topológico estricto."""
         state_2d = self.state.reshape(self.grid_size)
-        vl_2d = self.viral_load.reshape(self.grid_size)
+        
+        # Calcular prevalencia actual para gatillar contención
+        pct_infected = np.sum(self.state == self.I) / self.N
+        
+        # Gatillo de cuarentena doméstica: los infectados reducen su emisión al 5% (95% aislamiento)
+        quarantine_active = getattr(self, 'enable_quarantine', False) and (pct_infected >= getattr(self, 'quarantine_trigger_pct', 0.05))
+        if quarantine_active:
+            vl_effective = np.where(self.state == self.I, 0.05 * self.viral_load, self.viral_load)
+        else:
+            vl_effective = self.viral_load
+            
+        vl_2d = vl_effective.reshape(self.grid_size)
+        
+        # Gatillo de distanciamiento social: reduce la probabilidad de transmisión en base al cumplimiento c_DS
+        ds_active = (getattr(self, 'c_DS', 0.0) > 0.0) and (pct_infected >= getattr(self, 'ds_trigger_pct', 0.05))
+        ds_factor = (1.0 - getattr(self, 'c_DS', 0.0)) if ds_active else 1.0
         
         prob_not_inf_2d = np.ones(self.grid_size, dtype=np.float32)
         v50_mat = self.v50.reshape(self.grid_size)
@@ -108,7 +123,7 @@ class DiscreteSEIRSDSimulation(BaseSEIRSDSimulation):
                 mask_inf = mask_inf & apply_mask
                 
             v_j = shifted_vl
-            hill_sigma = (v_j**self.n_hill) / (v_j**self.n_hill + v50_mat**self.n_hill)
+            hill_sigma = (v_j**self.n_hill) / (v_j**self.n_hill + v50_mat**self.n_hill) * ds_factor
             
             # Multiplicar sobre la probabilidad de evadir infección
             prob_not_inf_2d[mask_inf] *= (1.0 - hill_sigma[mask_inf])

@@ -58,7 +58,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
     def _fase0_inicializacion(self, output_dir=None):
         """Inicializa perfiles inmunes en core y exporta el mapa estático del enfoque continuo."""
         super()._fase0_inicializacion(output_dir=output_dir)
-        self.tau_infection = self.omega_in * self.tau_max
+        self.tau_infection = self.omega_in * self.tau_max * (1.0 + getattr(self, 'eta_hig', 0.0))
+        self.has_mask = np.random.rand(self.N) < getattr(self, 'barbijo_cumplimiento', 0.0)
         
         base_dir = Path(output_dir) if output_dir is not None else Path(__file__).parent
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -90,8 +91,10 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         ds_active = (getattr(self, 'c_DS', 0.0) > 0.0) and (pct_infected >= getattr(self, 'ds_trigger_pct', 0.05))
         current_ell = self.ell * (1.0 - 0.5 * getattr(self, 'c_DS', 0.0)) if ds_active else self.ell
         
+        # Reducir emisión si el emisor usa mascarilla
+        mask_em_mult = np.where(self.has_mask, 1.0 - getattr(self, 'eta_em', 0.6), 1.0)
         # Compensador de Itô en la emisión: promedio trapezoidal de V_t y V_t+dt
-        emission_avg = 0.5 * (self.prev_viral_load + self.viral_load) * np.exp(0.5 * (sigma**2) * self.dt)
+        emission_avg = 0.5 * (self.prev_viral_load + self.viral_load) * np.exp(0.5 * (sigma**2) * self.dt) * mask_em_mult
         
         coords_t = np.column_stack((self.coord_x, self.coord_y))
         tree_t = KDTree(coords_t)
@@ -190,8 +193,10 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             # Movimiento libre / calles sin hubs activos
             delta_step = getattr(self, 'delta_ext', 1.0)
 
+        # Reducir dosis absorbida si el receptor usa mascarilla
+        mask_rec_mult = np.where(self.has_mask, 1.0 - getattr(self, 'eta_rec', 0.5), 1.0)
         # Decaimiento ambiental δ por agente analíticamente estable + promedio de dosis
-        self.dosis = self.dosis * np.exp(-delta_step * self.dt) + 0.5 * (R_t + R_pred) * self.dt
+        self.dosis = self.dosis * np.exp(-delta_step * self.dt) + 0.5 * (R_t + R_pred) * self.dt * mask_rec_mult
         
         # --- 4.1 SIMULACIÓN DE PARTÍCULAS DE AEROSOL PARA LA ANIMACIÓN ---
         # Decaimiento y actualización de partículas existentes

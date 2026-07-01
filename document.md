@@ -423,6 +423,64 @@ donde ε > 0 representa la siembra viral inicial. El resto de la población mant
 
 **Nota sobre la elección de I₀:** La selección del subconjunto semilla no es trivial. Una siembra aleatoria uniforme produce dinámicas iniciales distintas a una siembra geográficamente concentrada (clúster) o estratificada por perfil inmune. Para reproducibilidad, se recomienda fijar la semilla del generador pseudoaleatorio y documentar explícitamente el criterio de selección de I₀.
 
+## Parte IX: Medidas de Intervención, Protección e Higiene
+
+El sistema de modelado permite evaluar el impacto de políticas de salud pública (intervenciones colectivas) y cambios de conducta (protección personal e higiene) sobre la dinámica de propagación del virus.
+
+### 1. Medidas de Intervención Colectiva (Gatillos de Contención)
+
+Ambos entornos (discreto y continuo) evalúan dinámicamente la prevalencia del virus $P(t) = \frac{|I(t)|}{N}$ para activar de forma adaptativa las medidas de contención cuando se supera un umbral crítico.
+
+#### 1.1 Cuarentena Doméstica y Aislamiento de Infectados
+* **Objetivo:** Restringir el movimiento y los contactos de los individuos infecciosos/expuestos para detener la propagación del virus.
+* **Enfoque Continuo:** Si la prevalencia supera el gatillo de cuarentena ($P(t) \ge \text{gatillo\_cuarentena}$), todos los agentes expuestos ($E$) o infectados ($I$) ven reducida su difusividad espacial a cero:
+  $$D_{esp}(V_i) = 0 \qquad \forall i \in \{E, I\}$$
+  Físicamente, esto confina a los agentes enfermos en sus posiciones geográficas actuales (aislamiento en el hogar), evitando que propaguen aerosoles por el mapa.
+* **Enfoque Discreto:** Si el gatillo de cuarentena se activa, se asume un aislamiento domiciliario con un 95% de efectividad. La carga viral efectiva que una celda enferma emite a sus celdas vecinas se escala por un factor de atenuación:
+  $$V_{efectiva, j} = 0.05 \cdot V_j \qquad \forall j \in \{I, E\}$$
+
+#### 1.2 Distanciamiento Social
+* **Objetivo:** Incrementar la separación física promedio entre agentes en la sociedad.
+* **Enfoque Continuo:** Al activarse el gatillo, el radio efectivo de la pluma de aerosol ($\ell$) se reduce linealmente de acuerdo con el cumplimiento del distanciamiento ($C_{DS} \in [0, 1]$):
+  $$\ell_{efectivo} = \ell \cdot (1.0 - 0.5 \cdot C_{DS})$$
+  Esto reduce el volumen del campo de inóculo alrededor de los infectados, requiriendo que los susceptibles se acerquen físicamente mucho más para acumular dosis de contagio.
+* **Enfoque Discreto:** Al activarse, la probabilidad de transmisión sigmoide de Hill entre celdas contiguas se mitiga directamente según el nivel de acatamiento:
+  $$\sigma_{efectiva} = \sigma(V_j, \omega_{in,i}) \cdot (1.0 - C_{DS})$$
+
+---
+
+### 2. Medidas de Protección Personal e Higiene
+
+#### 2.1 Uso de Mascarillas (Barbijo)
+El uso de mascarillas se define por un nivel de adopción en la población $P_{mask} \in [0, 1]$ y dos eficiencias de filtración:
+* **Eficiencia de Emisión ($\eta_{em}$):** Fracción de partículas virales que la máscara retiene al exhalar.
+* **Eficiencia de Recepción ($\eta_{rec}$):** Fracción de virus filtrada al inhalar del ambiente.
+
+En el **Enfoque Continuo**, cada agente $i$ recibe un estado binario de mascarilla $M_i \in \{0, 1\}$ extraído de $P_{mask}$. La filtración actúa en dos etapas físicas:
+1. **Emisión (Origen):** La emisión de carga viral al aire por parte de un infectado $j$ se mitiga por su máscara:
+   $$I_{j,t} = I_{j,t}^{basal} \cdot (1.0 - \eta_{em} \cdot M_j)$$
+2. **Recepción (Destino):** La dosis inhalada por un susceptible $i$ se filtra antes de entrar a su torrente:
+   $$\Delta D_i(t) = \Delta D_i^{basal}(t) \cdot (1.0 - \eta_{rec} \cdot M_i)$$
+
+#### 2.2 Higiene Personal (Lavado de Manos y Sanitización)
+El parámetro de higiene personal $\eta_{hig} \in [0, 1]$ representa el aumento de la barrera de bioseguridad del huésped ante el patógeno (ej: desactivación de virus en superficies antes de ingresar a vías respiratorias):
+* **Enfoque Continuo:** Eleva directamente el umbral de tolerancia acumulada de dosis necesario para infectarse:
+  $$\tau_i = \omega_{in,i} \cdot \tau_{max} \cdot (1.0 + \eta_{hig})$$
+* **Enfoque Discreto:** Eleva el umbral de carga viral de saturación $V_{50}$ de la celda receptora, dificultando la transmisión en cada paso de tiempo:
+  $$V_{50}(\omega_{in,i}) = V_{50,basal} \cdot (1 + \gamma \cdot \omega_{in,i}) \cdot (1.0 + \eta_{hig})$$
+
+---
+
+### 3. Catálogo de Patógenos Unificado
+
+Para garantizar consistencia biológica, las características clínicas intrínsecas del virus se definen en una estructura inmutable `VirusProfile`. Al seleccionar un virus del catálogo, todas sus constantes físicas y clínicas se inyectan en los simuladores:
+
+| Patógeno | Tolerancia ($\tau_{max}$) | Radio Aerosol ($\ell$) | Decaimiento ($\delta_{ext}$) | Incubación ($k_E, p_E$) | Letalidad ($\lambda$) | Inmunidad ($\mu_R, M_R$) |
+|---|---|---|---|---|---|---|
+| **Sarampión** | Baja ($2.0$) | Muy Alto ($4.0$ m) | Lento ($0.3$) | $k=2, p=0.1$ (~18 días) | Alta ($7.0$) | Vitalicia (~300 años) |
+| **COVID-19 Delta** | Media ($6.0$) | Alto ($2.5$ m) | Medio ($1.5$) | $k=2, p=0.4$ (~3 días) | Media ($5.0$) | Corta (~120 días) |
+| **Influenza Estacional** | Alta ($15.0$) | Bajo ($1.2$ m) | Rápido ($2.5$) | $k=2, p=0.6$ (~1.3 días) | Baja ($2.5$) | Media (~365 días) |
+
 ---
 
 ## Apéndice: Tabla de Parámetros
