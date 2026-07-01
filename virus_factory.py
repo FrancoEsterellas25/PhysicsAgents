@@ -35,6 +35,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from typing import Any, Dict
+from tabulate import tabulate
 
 # Forzar UTF-8 en consola Windows (cp1252 no admite caracteres especiales)
 if hasattr(sys.stdout, "reconfigure"):
@@ -516,9 +517,6 @@ def get_profile(key: str) -> VirusProfile:
             f"Disponibles: {list_diseases()}"
         )
     return VIRUS_CATALOG[key_lower]
-
-
-from tabulate import tabulate
 
 def get_parameter_table():
     headers = ["Enfermedad", "tau_max", "ell (m)", "delta_ext", "lam", "Inc (d)", "mu_R (d)"]
