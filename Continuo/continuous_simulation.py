@@ -86,6 +86,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.rho_hogar = 1.5
         self.infections_caused = np.zeros(self.N, dtype=np.int32)
         self.infected_by = np.full(self.N, -1, dtype=np.int32)
+        self.current_time = 0.0
+
 
 
 
@@ -95,6 +97,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.tau_infection = self.omega_in * self.tau_max * (1.0 + getattr(self, 'eta_hig', 0.0))
         self.has_mask = np.random.rand(self.N) < getattr(self, 'barbijo_cumplimiento', 0.0)
         self.quarantined = np.zeros(self.N, dtype=bool)
+        self.current_time = 0.0
+
 
         
         # Initialize ages (edades)
@@ -744,11 +748,13 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         
         for step in range(1, self.t_max + 1):
             current_time = step * self.dt
+            self.current_time = current_time
             self._fase1_ou_y_auc(current_time)
             self._fase2_contagio()
             self._fase3_transiciones(current_time)
             self._fase4_congelamiento()
             self._fase5_buffer(current_time)
+
             
         # Compilación de la telemetría dinámica final con coordenadas continuas
         tiempo_arr = np.concatenate(self.telemetry['tiempo'])
