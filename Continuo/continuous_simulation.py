@@ -8,23 +8,23 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from scipy.spatial import KDTree
 from core.base_simulation import BaseSEIRSDSimulation
+from core.biology import generar_perfiles_inmunes, resolver_negbin_params
 
 class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
     def __init__(self, N=1600, L=100.0, t_max=30):
         """
-        Simulación SEIRS-D en Espacio Continuo (Browniano).
-        Implementa Langevin-Stratonovich, Kernel Gaussiano vía KDTree,
-        Compensador de Itô en Emisión y Operator Splitting.
+        Simulación SEIRS-D en Espacio Continuo Langevin-Stratonovich con
+        hubs demográficos y agendas diarias.
         """
         super().__init__(N=N, t_max=t_max)
         self.dt = 0.1            # Paso de tiempo del continuo (ej: 0.1 dias = 2.4 horas)
         self.L = L
         
         # Parámetros específicos del Enfoque Continuo
-        self.delta = 0.5         # Decaimiento ambiental
-        self.delta_ext = 1.0
-        self.delta_cerrado = 0.2
-        self.delta_abierto = 4.0
+        self.delta = 0.5         # Decaimiento ambiental default
+        self.delta_cerrado = 0.2  # Decaimiento en espacios cerrados (Hogar, Escuela, Trabajo)
+        self.delta_ext = 1.0     # Decaimiento en tránsito / exteriores
+        self.delta_abierto = 4.0  # Decaimiento en espacios abiertos (Supermercado, Centro)
         self.ell = 1.0           # Longitud de escala del kernel gaussiano
         self.D_basal = 1.0       # Difusividad basal
         self.D_min = 0.05        # Difusividad mínima
@@ -34,25 +34,59 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         # Coordenadas iniciales continuas: x_i(0) ~ Uniforme([0, L]^2)
         self.coord_x = np.random.uniform(0.0, self.L, self.N).astype(np.float32)
         self.coord_y = np.random.uniform(0.0, self.L, self.N).astype(np.float32)
-        self.hogar_x = self.coord_x.copy()
-        self.hogar_y = self.coord_y.copy()
         
         # Dosis acumulada
         self.dosis = np.zeros(self.N, dtype=np.float32)
         self.tau_infection = None
-
-        # Inicializar coordenadas de partículas de aerosol lagrangianas
-        self.aerosol_coords = np.zeros((0, 2), dtype=np.float32)
-        self.aerosol_dosis = np.zeros(0, dtype=np.float32)
-        self.aerosol_decay = np.zeros(0, dtype=np.float32)
         
-        # Telemetría de virus
-        self.telemetry_virus = {
-            'tiempo': [],
-            'aerosol_x': [],
-            'aerosol_y': [],
-            'aerosol_dosis': []
-        }
+        # Hub parameters
+        self.H = 0  # Number of hubs
+        self.hubs_coords = np.zeros((0, 2), dtype=np.float32)
+        self.hubs_types = []  # List of 'agenda' or 'gravitatorio' strings
+        self.hubs_lambda = np.zeros(0, dtype=np.float32)  # Poisson rate for agenda hubs (visitas/dia)
+        self.hubs_alpha = np.zeros(0, dtype=np.float32)   # Gamma stay shape
+        self.hubs_beta = np.zeros(0, dtype=np.float32)    # Gamma stay scale
+        self.hubs_kappa = np.zeros(0, dtype=np.float32)   # Gravity force
+        self.hubs_ell = np.zeros(0, dtype=np.float32)     # Gravity influence radius
+        self.hubs_rho = np.zeros(0, dtype=np.float32)     # Agenda emission scale factor
+        
+        # State tracking for visits
+        self.remaining_visit_time = np.zeros((self.N, 0), dtype=np.float32)
+        self.transit_start_coords = np.zeros((self.N, 2), dtype=np.float32)
+        self.transit_end_coords = np.zeros((self.N, 2), dtype=np.float32)
+        
+        # Social distancing continuous effectiveness parameter
+        self.eta_mov = 0.5
+        
+        # Household and Transit parameters
+        self.N_hogar = 4         # Average household size
+        self.T_transito = 0.5 / 24.0  # Transit duration in days (e.g. 30 minutes)
+        
+        # Motion states: 0 = Home, 1 = Transit, 2 = Hub
+        self.motion_state = np.zeros(self.N, dtype=np.int8)
+        self.remaining_transit_time = np.zeros(self.N, dtype=np.float32)
+        self.transit_destination_hub = np.full(self.N, -1, dtype=np.int16)
+        
+        # Streamlit customizable options
+        self.hubs_activos = True
+        self.movimiento_libre = False
+        self.enable_quarantine = True
+        self.quarantine_trigger_pct = 0.05
+        
+        # Interventions and masks
+        self.eta_hig = 0.0
+        self.eta_em = 0.6
+        self.eta_rec = 0.5
+        self.barbijo_cumplimiento = 0.0
+        self.c_DS = 0.0
+        self.ds_trigger_pct = 0.05
+        
+        # State tracking for quarantine and R_ef
+        self.quarantined = np.zeros(self.N, dtype=bool)
+        self.rho_hogar = 1.5
+        self.infections_caused = np.zeros(self.N, dtype=np.int32)
+        self.infected_by = np.full(self.N, -1, dtype=np.int32)
+
 
 
     def _fase0_inicializacion(self, output_dir=None):
@@ -60,6 +94,164 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         super()._fase0_inicializacion(output_dir=output_dir)
         self.tau_infection = self.omega_in * self.tau_max * (1.0 + getattr(self, 'eta_hig', 0.0))
         self.has_mask = np.random.rand(self.N) < getattr(self, 'barbijo_cumplimiento', 0.0)
+        self.quarantined = np.zeros(self.N, dtype=bool)
+
+        
+        # Initialize ages (edades)
+        np.random.seed(42)
+        self.edades = np.random.randint(5, 75, self.N)
+        
+        # Scale hubs dynamically based on population size N (only if hubs_activos is True)
+        hubs_names = []
+        hubs_colors = []
+        if getattr(self, "hubs_activos", True):
+            n_children = np.sum(self.edades < 18)
+            n_adults = np.sum((self.edades >= 18) & (self.edades <= 65))
+            
+            S = max(1, int(n_children // 70))  # ~70 children per school
+            W = max(1, int(n_adults // 60))    # ~60 adults per work center
+            M = max(1, int(self.N // 400))     # ~400 agents per supermarket
+            
+            self.H = S + W + M + 1  # Schools + Work Centers + Supermarkets + El Centro
+        else:
+            S = W = M = 0
+            self.H = 0
+            
+        # Allocate hub config arrays
+        self.hubs_coords = np.zeros((self.H, 2), dtype=np.float32)
+        self.hubs_types = []
+        self.hubs_lambda = np.zeros(self.H, dtype=np.float32)
+        self.hubs_alpha = np.zeros(self.H, dtype=np.float32)
+        self.hubs_beta = np.zeros(self.H, dtype=np.float32)
+        self.hubs_kappa = np.zeros(self.H, dtype=np.float32)
+        self.hubs_ell = np.zeros(self.H, dtype=np.float32)
+        self.hubs_rho = np.zeros(self.H, dtype=np.float32)
+        self.hubs_is_closed_group = np.zeros(self.H, dtype=bool)
+        self.hubs_is_closed_space = np.zeros(self.H, dtype=bool)
+        
+        # Symmetrical Layout: Ring of agenda hubs + Centro in the middle (only if H > 0)
+        if self.H > 0:
+            center_x, center_y = self.L / 2.0, self.L / 2.0
+            R_circle = self.L * 0.35
+            
+            # 1. Schools
+            for h in range(S):
+                self.hubs_types.append("agenda")
+                self.hubs_lambda[h] = 5.0 / 7.0
+                self.hubs_alpha[h] = 12.0
+                self.hubs_beta[h] = 0.5 / 24.0
+                self.hubs_kappa[h] = 0.0
+                self.hubs_ell[h] = 0.0
+                self.hubs_rho[h] = 0.8
+                self.hubs_is_closed_group[h] = True
+                self.hubs_is_closed_space[h] = True
+                hubs_names.append(f"Escuela {h+1}" if S > 1 else "Escuela")
+                hubs_colors.append("Yellow")
+                
+            # 2. Work Centers
+            for h in range(S, S + W):
+                self.hubs_types.append("agenda")
+                self.hubs_lambda[h] = 5.0 / 7.0
+                self.hubs_alpha[h] = 16.0
+                self.hubs_beta[h] = 0.5 / 24.0
+                self.hubs_kappa[h] = 0.0
+                self.hubs_ell[h] = 0.0
+                self.hubs_rho[h] = 0.7
+                self.hubs_is_closed_group[h] = True
+                self.hubs_is_closed_space[h] = True
+                hubs_names.append(f"Trabajo {h-S+1}" if W > 1 else "Trabajo")
+                hubs_colors.append("Orange")
+                
+            # 3. Supermarkets
+            for h in range(S + W, S + W + M):
+                self.hubs_types.append("agenda")
+                self.hubs_lambda[h] = 0.5
+                self.hubs_alpha[h] = 3.0
+                self.hubs_beta[h] = 0.25 / 24.0
+                self.hubs_kappa[h] = 0.0
+                self.hubs_ell[h] = 0.0
+                self.hubs_rho[h] = 0.9
+                self.hubs_is_closed_group[h] = False
+                self.hubs_is_closed_space[h] = True  # Supermarket is closed/indoor space!
+                hubs_names.append(f"Supermercado {h-S-W+1}" if M > 1 else "Supermercado")
+                hubs_colors.append("Cyan")
+                
+            # 4. El Centro (Agenda - Open)
+            h_centro = S + W + M
+            self.hubs_coords[h_centro] = [center_x, center_y]
+            self.hubs_types.append("agenda")
+            self.hubs_lambda[h_centro] = 0.4                  # visits frequency (0.4 visits/day)
+            self.hubs_alpha[h_centro] = 4.0                   # Gamma shape parameter for stay
+            self.hubs_beta[h_centro] = 0.25 / 24.0            # Gamma scale parameter for stay (1.0 hour)
+            self.hubs_kappa[h_centro] = 0.0
+            self.hubs_ell[h_centro] = 0.0
+            self.hubs_rho[h_centro] = 1.0
+            self.hubs_is_closed_group[h_centro] = False
+            self.hubs_is_closed_space[h_centro] = False       # Centro is open/outdoor space!
+            hubs_names.append("El Centro")
+            hubs_colors.append("Green")
+            
+            # Build environments list for parquet export
+            hubs_ambientes = []
+            for h in range(self.H):
+                hubs_ambientes.append("cerrado" if self.hubs_is_closed_space[h] else "abierto")
+            
+            # Distribute agenda hubs coordinates in the ring
+            for h in range(S + W + M):
+                angle = 2.0 * np.pi * h / (S + W + M)
+                self.hubs_coords[h, 0] = center_x + R_circle * np.cos(angle)
+                self.hubs_coords[h, 1] = center_y + R_circle * np.sin(angle)
+            
+        # Initialize remaining visit timer array and transit start/end coords
+        self.remaining_visit_time = np.zeros((self.N, self.H), dtype=np.float32)
+        self.transit_start_coords = np.zeros((self.N, 2), dtype=np.float32)
+        self.transit_end_coords = np.zeros((self.N, 2), dtype=np.float32)
+        self.hub_group_id = np.full((self.N, self.H), -1, dtype=np.int32)
+        
+        if self.H > 0:
+            # School assignment for children
+            child_indices = np.where(self.edades < 18)[0]
+            for idx_pos, idx in enumerate(child_indices):
+                h_school = idx_pos % S
+                self.hub_group_id[idx, h_school] = (idx_pos // S) // 20  # class size of 20
+                
+            # Work assignment for adults
+            adult_indices = np.where((self.edades >= 18) & (self.edades <= 65))[0]
+            for idx_pos, idx in enumerate(adult_indices):
+                h_work = S + (idx_pos % W)
+                self.hub_group_id[idx, h_work] = (idx_pos // W) // 12  # office size of 12
+
+        # Initialize household allocations and coordinates, avoiding hub positions
+        H_hogar = int(np.ceil(self.N / self.N_hogar))
+        
+        unique_home_coords = []
+        for _ in range(H_hogar):
+            while True:
+                pos = np.random.uniform(0.0, self.L, 2).astype(np.float32)
+                if self.H > 0:
+                    dists = np.linalg.norm(self.hubs_coords - pos, axis=1)
+                    is_too_close = False
+                    for h in range(self.H):
+                        min_dist = 5.5 if "Centro" in hubs_names[h] else 3.5
+                        if dists[h] < min_dist:
+                            is_too_close = True
+                            break
+                    if is_too_close:
+                        continue
+                unique_home_coords.append(pos)
+                break
+        unique_home_coords = np.array(unique_home_coords, dtype=np.float32)
+        
+        self.household_id = (np.arange(self.N, dtype=np.int32) % H_hogar)
+        np.random.shuffle(self.household_id)
+        self.home_coords = unique_home_coords[self.household_id]
+        
+        # Initialize motion state and lock positions to homes initially
+        self.motion_state = np.zeros(self.N, dtype=np.int8)
+        self.coord_x = self.home_coords[:, 0].copy()
+        self.coord_y = self.home_coords[:, 1].copy()
+        self.remaining_transit_time = np.zeros(self.N, dtype=np.float32)
+        self.transit_destination_hub = np.full(self.N, -1, dtype=np.int16)
         
         base_dir = Path(output_dir) if output_dir is not None else Path(__file__).parent
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -69,33 +261,158 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             "omega_in": self.omega_in,
             "omega_ad": self.omega_ad,
             "tau_infection": self.tau_infection,
-            "hogar_x": self.hogar_x,
-            "hogar_y": self.hogar_y
+            "hogar_x": self.home_coords[:, 0],
+            "hogar_y": self.home_coords[:, 1],
+            "edad": self.edades
         })
         df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
         print(f"Exportado {base_dir / 'mapa_estatico.parquet'} (Continuo)")
         
+        # export hubs.parquet if hubs exist
+        if self.H > 0:
+            df_hubs = pl.DataFrame({
+                "x": self.hubs_coords[:, 0],
+                "y": self.hubs_coords[:, 1],
+                "tipo": self.hubs_types,
+                "nombre": hubs_names,
+                "color": hubs_colors,
+                "ambiente": hubs_ambientes
+            })
+            df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
+            print(f"Exportado {base_dir / 'hubs.parquet'}")
+        else:
+            pl.DataFrame({
+                "x": [], "y": [], "tipo": [], "nombre": [], "color": [], "ambiente": []
+            }).write_parquet(base_dir / "hubs.parquet", compression="snappy")
+            
+        # Initialize Lagrangian aerosol particle arrays for gas simulation
+        self.aerosol_coords = np.zeros((0, 2), dtype=np.float32)
+        self.aerosol_dosis = np.zeros(0, dtype=np.float32)
+        self.aerosol_decay = np.zeros(0, dtype=np.float32)
 
     def _fase2_contagio(self):
         """
         Contagio Continuo: Dosis ambiental acumulada vía campo gaussiano evaluado con KDTree,
         movimiento de Langevin-Stratonovich con inhibición motora (Hill), y operator splitting.
         """
-        # --- 1. EVALUACIÓN DEL CAMPO (Dosis absorbida t_n) ---
+        t = getattr(self, "current_time", 0.0)
+        
+        # 1. NIGHT STATUS CHECK
+        is_night = (t % 1.0 < 7.0 / 24.0) or (t % 1.0 > 23.0 / 24.0)
+        
+        # 2. STATE MACHINE UPDATES
+        # Force quarantined agents home
+        mask_q = self.quarantined
+        if np.any(mask_q):
+            self.motion_state[mask_q] = 0
+            self.remaining_transit_time[mask_q] = 0.0
+            self.transit_destination_hub[mask_q] = -1
+            self.coord_x[mask_q] = self.home_coords[mask_q, 0]
+            self.coord_y[mask_q] = self.home_coords[mask_q, 1]
+        
+        # Lock deceased agents home
+        mask_dead = (self.state == self.D)
+        self.motion_state[mask_dead] = 0
+        
+        # Decrement active visit times (motion_state == 2)
+        mask_at_hub = (self.motion_state == 2)
+        if np.any(mask_at_hub) and self.H > 0:
+            # Reconstruct visiting_hub_idx to know which hubs agents are currently visiting
+            visiting_hub_idx = np.argmax(self.remaining_visit_time > 0, axis=1)
+            self.remaining_visit_time[mask_at_hub] = np.maximum(0.0, self.remaining_visit_time[mask_at_hub] - self.dt)
+            # If stay ends, initiate transit back home
+            for i in np.where(mask_at_hub)[0]:
+                hub_idx = np.argmax(self.remaining_visit_time[i] > 0) if np.any(self.remaining_visit_time[i] > 0) else 0
+                if self.remaining_visit_time[i, hub_idx] <= 0:
+                    self.motion_state[i] = 1
+                    self.remaining_transit_time[i] = self.T_transito
+                    self.transit_destination_hub[i] = -1
+                    # Store coordinates for straight-line path interpolation
+                    self.transit_start_coords[i] = [self.coord_x[i], self.coord_y[i]]
+                    self.transit_end_coords[i] = self.home_coords[i]
+
+        # Decrement transit timers (motion_state == 1)
+        mask_in_transit = (self.motion_state == 1)
+        if np.any(mask_in_transit):
+            self.remaining_transit_time[mask_in_transit] -= self.dt
+            expired_transit = mask_in_transit & (self.remaining_transit_time <= 0.0)
+            if np.any(expired_transit):
+                for i in np.where(expired_transit)[0]:
+                    dest = self.transit_destination_hub[i]
+                    if dest == -1:
+                        # Arrived home
+                        self.motion_state[i] = 0
+                        self.coord_x[i] = self.home_coords[i, 0]
+                        self.coord_y[i] = self.home_coords[i, 1]
+                    else:
+                        # Arrived at hub
+                        self.motion_state[i] = 2
+                        self.coord_x[i] = self.hubs_coords[dest, 0]
+                        self.coord_y[i] = self.hubs_coords[dest, 1]
+                        # Sample stay duration
+                        self.remaining_visit_time[i, dest] = np.random.gamma(self.hubs_alpha[dest], self.hubs_beta[dest])
+            
+            # Night abort transit: if heading to hub and it's night, redirect them back home
+            if is_night:
+                abort_mask = mask_in_transit & (self.transit_destination_hub >= 0)
+                if np.any(abort_mask):
+                    self.transit_destination_hub[abort_mask] = -1
+                    self.remaining_transit_time[abort_mask] = self.T_transito
+                    self.transit_start_coords[abort_mask] = np.column_stack((self.coord_x[abort_mask], self.coord_y[abort_mask]))
+                    self.transit_end_coords[abort_mask] = self.home_coords[abort_mask]
+
+        # Visit triggers for agents at home (motion_state == 0) and not quarantined, not dead
+        if not is_night and self.H > 0:
+            mask_at_home = (self.motion_state == 0) & ~self.quarantined & ~mask_dead
+            if np.any(mask_at_home):
+                for h in range(self.H):
+                    if self.hubs_types[h] == 'agenda' and self.hubs_lambda[h] > 0:
+                        # Only allow visit if open hub OR if the agent has a group assigned in this closed hub
+                        can_visit = np.ones(self.N, dtype=bool)
+                        if self.hubs_is_closed_group[h]:
+                            can_visit = (self.hub_group_id[:, h] != -1)
+                        
+                        prob_start = 1.0 - np.exp(-self.hubs_lambda[h] * self.dt)
+                        starts_visit = mask_at_home & can_visit & (np.random.rand(self.N) < prob_start)
+                        if np.any(starts_visit):
+                            self.motion_state[starts_visit] = 1
+                            self.remaining_transit_time[starts_visit] = self.T_transito
+                            self.transit_destination_hub[starts_visit] = h
+                            # Store coordinates for straight-line path interpolation
+                            self.transit_start_coords[starts_visit] = np.column_stack((self.coord_x[starts_visit], self.coord_y[starts_visit]))
+                            self.transit_end_coords[starts_visit] = self.hubs_coords[h]
+                            # Exclude from triggering multiple visits in same step
+                            mask_at_home = mask_at_home & ~starts_visit
+
+        # Force positions
+        mask_home = (self.motion_state == 0)
+        mask_hub = (self.motion_state == 2)
+        if np.any(mask_hub) and self.H > 0:
+            visiting_hub_idx = np.argmax(self.remaining_visit_time > 0, axis=1)
+
+        # 4. EMISSION SCALING (Domestic vs Hubs)
         sigma = self.sigma_base * (1.0 - 0.5 * self.omega_ad)
         
-        # Calcular prevalencia actual para gatillar intervenciones
+        # Apply mask (barbijo) compliance exhaler emission reduction
+        mask_em_mult = np.where(self.has_mask, 1.0 - getattr(self, 'eta_em', 0.6), 1.0)
+        emission_avg = 0.5 * (self.prev_viral_load + self.viral_load) * np.exp(0.5 * (sigma**2) * self.dt) * mask_em_mult
+        
+        scale_factors = np.ones(self.N, dtype=np.float32)
+        # Domestic scale
+        scale_factors[self.motion_state == 0] = self.rho_hogar
+        # Hub scale
+        if self.H > 0 and np.any(mask_hub):
+            scale_factors[mask_hub] = self.hubs_rho[visiting_hub_idx[mask_hub]]
+        emission_avg *= scale_factors
+
+        # Calculate active infected percentage for dynamic interventions
         pct_infected = np.sum(self.state == self.I) / self.N
         
         # Gatillo de distanciamiento social (reduce el radio efectivo del aerosol ell)
         ds_active = (getattr(self, 'c_DS', 0.0) > 0.0) and (pct_infected >= getattr(self, 'ds_trigger_pct', 0.05))
         current_ell = self.ell * (1.0 - 0.5 * getattr(self, 'c_DS', 0.0)) if ds_active else self.ell
-        
-        # Reducir emisión si el emisor usa mascarilla
-        mask_em_mult = np.where(self.has_mask, 1.0 - getattr(self, 'eta_em', 0.6), 1.0)
-        # Compensador de Itô en la emisión: promedio trapezoidal de V_t y V_t+dt
-        emission_avg = 0.5 * (self.prev_viral_load + self.viral_load) * np.exp(0.5 * (sigma**2) * self.dt) * mask_em_mult
-        
+
+        # 5. DOSIS FIELD CALCULATIONS (t_n)
         coords_t = np.column_stack((self.coord_x, self.coord_y))
         tree_t = KDTree(coords_t)
         
@@ -103,59 +420,150 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         pairs_t = tree_t.query_pairs(r_cut)
         
         R_t = np.zeros(self.N, dtype=np.float32)
-        mask_I = (self.state == self.I)
+        mask_I = (self.state == self.I) & ~self.quarantined
         
         if len(pairs_t) > 0:
             pairs_arr = np.array(list(pairs_t))
             i_idx = pairs_arr[:, 0]
             j_idx = pairs_arr[:, 1]
-            dists = np.linalg.norm(coords_t[i_idx] - coords_t[j_idx], axis=1)
-            kernel_vals = np.exp(-(dists**2) / (2.0 * current_ell**2))
             
-            # Suma de contribuciones bidireccionales
-            np.add.at(R_t, i_idx, kernel_vals * emission_avg[j_idx] * mask_I[j_idx])
-            np.add.at(R_t, j_idx, kernel_vals * emission_avg[i_idx] * mask_I[i_idx])
+            # Filter out pairs in the same closed hub that belong to different groups
+            allowed_mask = np.ones(len(i_idx), dtype=bool)
+            both_in_hub = (self.motion_state[i_idx] == 2) & (self.motion_state[j_idx] == 2)
+            if np.any(both_in_hub):
+                h_i = visiting_hub_idx[i_idx]
+                h_j = visiting_hub_idx[j_idx]
+                same_hub = both_in_hub & (h_i == h_j)
+                if np.any(same_hub):
+                    is_closed_hub = self.hubs_is_closed_group[h_i]
+                    closed_same_hub = same_hub & is_closed_hub
+                    if np.any(closed_same_hub):
+                        group_i = self.hub_group_id[i_idx, h_i]
+                        group_j = self.hub_group_id[j_idx, h_j]
+                        different_group = (group_i != group_j)
+                        allowed_mask[closed_same_hub & different_group] = False
+            
+            i_idx = i_idx[allowed_mask]
+            j_idx = j_idx[allowed_mask]
+            
+            if len(i_idx) > 0:
+                dists = np.linalg.norm(coords_t[i_idx] - coords_t[j_idx], axis=1)
+                kernel_vals = np.exp(-(dists**2) / (2.0 * current_ell**2))
+                
+                # Sum bidirectionally
+                np.add.at(R_t, i_idx, kernel_vals * emission_avg[j_idx] * mask_I[j_idx])
+                np.add.at(R_t, j_idx, kernel_vals * emission_avg[i_idx] * mask_I[i_idx])
 
-        # --- 2. PREDICCIÓN ESPACIAL (Stratonovich con difusividad dependiente de v_t+dt) ---
-        # ponytail: evitamos division por cero si viral_load = 0 en el cálculo de Hill
+        # 6. SPATIAL PREDICTION (Free brownian motion only for agents in transit, local diffusion for home/hub)
+        # Apply c_DS to reduce basal diffusivity if active
+        D_basal_agent = self.D_basal * (1.0 - getattr(self, 'c_DS', 0.0) * self.eta_mov) if ds_active else self.D_basal
         v_pow = self.viral_load**self.n_mov
         vsint_pow = self.V_sint**self.n_mov
         D_esp = np.where(
             self.viral_load > 0,
-            self.D_basal * (1.0 - v_pow / (v_pow + vsint_pow)) + self.D_min,
-            self.D_basal + self.D_min
+            D_basal_agent * (1.0 - v_pow / (v_pow + vsint_pow)) + self.D_min,
+            D_basal_agent + self.D_min
         )
         
-        # Gatillo de cuarentena doméstica (los infectados y expuestos reducen su movilidad a 0)
-        quarantine_active = getattr(self, 'enable_quarantine', False) and (pct_infected >= getattr(self, 'quarantine_trigger_pct', 0.05))
-        if quarantine_active:
-            D_esp[self.state == self.I] = 0.0
-            D_esp[self.state == self.E] = 0.0
+        # assign non-zero diffusion coefficients for home and hub states
+        D_esp = np.where(
+            self.motion_state == 1,
+            D_esp,  # full speed in transit
+            np.where(
+                self.motion_state == 2,
+                0.20 * D_basal_agent,  # moderate local movement in hubs
+                0.08 * D_basal_agent   # slow local movement within household bounds
+            )
+        )
         
-        # Paso de predicción espacial (ruido browniano en 2D)
-        noise_x = np.random.normal(0.0, 1.0, self.N)
-        noise_y = np.random.normal(0.0, 1.0, self.N)
+        # Deceased agents remain completely still
+        D_esp[self.state == self.D] = 0.0
         
-        # Stratonovich: usamos el coeficiente en t_n+1 (difusividad evaluada con el V corregido)
-        pred_x = self.coord_x + np.sqrt(2.0 * D_esp * self.dt) * noise_x
-        pred_y = self.coord_y + np.sqrt(2.0 * D_esp * self.dt) * noise_y
+        # Gravitational Drift (only applies to transit agents)
+        drift_x = np.zeros(self.N, dtype=np.float32)
+        drift_y = np.zeros(self.N, dtype=np.float32)
+        if self.H > 0:
+            can_drift = (self.motion_state == 1)
+            if np.any(can_drift):
+                for h in range(self.H):
+                    if self.hubs_types[h] == 'gravitatorio' and self.hubs_kappa[h] > 0:
+                        dx = self.hubs_coords[h, 0] - self.coord_x
+                        dy = self.hubs_coords[h, 1] - self.coord_y
+                        dists = np.sqrt(dx**2 + dy**2)
+                        dir_x = dx / (dists + 1e-5)
+                        dir_y = dy / (dists + 1e-5)
+                        weight = np.exp(-(dists**2) / (2.0 * self.hubs_ell[h]**2))
+                        drift_x[can_drift] += self.hubs_kappa[h] * dir_x[can_drift] * weight[can_drift]
+                        drift_y[can_drift] += self.hubs_kappa[h] * dir_y[can_drift] * weight[can_drift]
+
+        pred_x = self.coord_x.copy()
+        pred_y = self.coord_y.copy()
         
-        # Condiciones de borde reflectantes
-        # Eje X
+        # Non-transit agents: local diffusion (Langevin)
+        mask_non_transit = (self.motion_state != 1)
+        if np.any(mask_non_transit):
+            noise_x = np.random.normal(0.0, 1.0, self.N)
+            noise_y = np.random.normal(0.0, 1.0, self.N)
+            pred_x[mask_non_transit] = self.coord_x[mask_non_transit] + np.sqrt(2.0 * D_esp[mask_non_transit] * self.dt) * noise_x[mask_non_transit]
+            pred_y[mask_non_transit] = self.coord_y[mask_non_transit] + np.sqrt(2.0 * D_esp[mask_non_transit] * self.dt) * noise_y[mask_non_transit]
+            
+        # Transit agents: linear path interpolation + small travel wiggle
+        mask_in_transit_pred = (self.motion_state == 1)
+        if np.any(mask_in_transit_pred):
+            frac = 1.0 - np.clip(self.remaining_transit_time / self.T_transito, 0.0, 1.0)
+            
+            base_x = self.transit_start_coords[:, 0] + (self.transit_end_coords[:, 0] - self.transit_start_coords[:, 0]) * frac
+            base_y = self.transit_start_coords[:, 1] + (self.transit_end_coords[:, 1] - self.transit_start_coords[:, 1]) * frac
+            
+            wiggle_x = np.random.normal(0.0, 0.15, self.N)
+            wiggle_y = np.random.normal(0.0, 0.15, self.N)
+            
+            pred_x[mask_in_transit_pred] = base_x[mask_in_transit_pred] + wiggle_x[mask_in_transit_pred]
+            pred_y[mask_in_transit_pred] = base_y[mask_in_transit_pred] + wiggle_y[mask_in_transit_pred]
+        
+        # Boundary reflections for transit agents
+        # X Axis
         mask_low_x = (pred_x < 0.0)
         pred_x[mask_low_x] = -pred_x[mask_low_x]
         mask_high_x = (pred_x > self.L)
         pred_x[mask_high_x] = 2.0 * self.L - pred_x[mask_high_x]
         pred_x = np.clip(pred_x, 0.0, self.L)
         
-        # Eje Y
+        # Y Axis
         mask_low_y = (pred_y < 0.0)
         pred_y[mask_low_y] = -pred_y[mask_low_y]
         mask_high_y = (pred_y > self.L)
         pred_y[mask_high_y] = 2.0 * self.L - pred_y[mask_high_y]
         pred_y = np.clip(pred_y, 0.0, self.L)
         
-        # --- 3. EVALUACIÓN DEL CAMPO PREDICHO ---
+        # Enforce radial bounds around target centers (only if not movimiento_libre)
+        if not getattr(self, "movimiento_libre", False):
+            # Home radial bounds (max radius = 1.2 units)
+            dx_home = pred_x - self.home_coords[:, 0]
+            dy_home = pred_y - self.home_coords[:, 1]
+            dist_home = np.sqrt(dx_home**2 + dy_home**2)
+            too_far_home = mask_home & (dist_home > 1.2)
+            pred_x[too_far_home] = self.home_coords[too_far_home, 0] + (dx_home[too_far_home] / dist_home[too_far_home]) * 1.2
+            pred_y[too_far_home] = self.home_coords[too_far_home, 1] + (dy_home[too_far_home] / dist_home[too_far_home]) * 1.2
+            
+            # Hub radial bounds (max radius = 2.5 units)
+            if np.any(mask_hub) and self.H > 0:
+                hub_idx = visiting_hub_idx[mask_hub]
+                h_cx = self.hubs_coords[hub_idx, 0]
+                h_cy = self.hubs_coords[hub_idx, 1]
+                dx_hub = pred_x[mask_hub] - h_cx
+                dy_hub = pred_y[mask_hub] - h_cy
+                dist_hub = np.sqrt(dx_hub**2 + dy_hub**2)
+                too_far_hub = dist_hub > 2.5
+                
+                temp_x = pred_x[mask_hub]
+                temp_y = pred_y[mask_hub]
+                temp_x[too_far_hub] = h_cx[too_far_hub] + (dx_hub[too_far_hub] / dist_hub[too_far_hub]) * 2.5
+                temp_y[too_far_hub] = h_cy[too_far_hub] + (dy_hub[too_far_hub] / dist_hub[too_far_hub]) * 2.5
+                pred_x[mask_hub] = temp_x
+                pred_y[mask_hub] = temp_y
+
+        # 7. EVALUATE PREDICTED DOSIS FIELD (t_n+1)
         coords_pred = np.column_stack((pred_x, pred_y))
         tree_pred = KDTree(coords_pred)
         pairs_pred = tree_pred.query_pairs(r_cut)
@@ -165,53 +573,44 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             pairs_pred_arr = np.array(list(pairs_pred))
             i_idx_p = pairs_pred_arr[:, 0]
             j_idx_p = pairs_pred_arr[:, 1]
-            dists_p = np.linalg.norm(coords_pred[i_idx_p] - coords_pred[j_idx_p], axis=1)
-            kernel_vals_p = np.exp(-(dists_p**2) / (2.0 * self.ell**2))
             
-            np.add.at(R_pred, i_idx_p, kernel_vals_p * emission_avg[j_idx_p] * mask_I[j_idx_p])
-            np.add.at(R_pred, j_idx_p, kernel_vals_p * emission_avg[i_idx_p] * mask_I[i_idx_p])
+            # Filter out pairs in the same closed hub that belong to different groups
+            allowed_mask_p = np.ones(len(i_idx_p), dtype=bool)
+            both_in_hub_p = (self.motion_state[i_idx_p] == 2) & (self.motion_state[j_idx_p] == 2)
+            if np.any(both_in_hub_p):
+                h_i_p = visiting_hub_idx[i_idx_p]
+                h_j_p = visiting_hub_idx[j_idx_p]
+                same_hub_p = both_in_hub_p & (h_i_p == h_j_p)
+                if np.any(same_hub_p):
+                    is_closed_hub_p = self.hubs_is_closed_group[h_i_p]
+                    closed_same_hub_p = same_hub_p & is_closed_hub_p
+                    if np.any(closed_same_hub_p):
+                        group_i_p = self.hub_group_id[i_idx_p, h_i_p]
+                        group_j_p = self.hub_group_id[j_idx_p, h_j_p]
+                        different_group_p = (group_i_p != group_j_p)
+                        allowed_mask_p[closed_same_hub_p & different_group_p] = False
             
-        # --- 4. CORRECCIÓN Y ACTUALIZACIÓN DE DOSIS ---
-        # Determinar decaimiento delta por agente dependiendo de si está dentro de un hub o en tránsito
-        if getattr(self, 'hubs_activos', False):
-            # Centros de los 4 hubs principales del espacio [0, L]^2
-            hubs = np.array([
-                [0.25 * self.L, 0.25 * self.L],
-                [0.75 * self.L, 0.25 * self.L],
-                [0.25 * self.L, 0.75 * self.L],
-                [0.75 * self.L, 0.75 * self.L]
-            ])
-            r_hub = 0.1 * self.L  # Radio de influencia del hub (10% del tamaño del mapa)
-            coords = np.column_stack((self.coord_x, self.coord_y))
+            i_idx_p = i_idx_p[allowed_mask_p]
+            j_idx_p = j_idx_p[allowed_mask_p]
             
-            # Identificar agentes dentro de la zona de cualquier hub
-            in_hub = np.any([np.linalg.norm(coords - hub, axis=1) < r_hub for hub in hubs], axis=0)
-            
-            # delta_cerrado en hubs, delta_abierto en exteriores/tránsito
-            delta_step = np.where(in_hub, getattr(self, 'delta_cerrado', 0.2), getattr(self, 'delta_abierto', 4.0))
-        else:
-            # Movimiento libre / calles sin hubs activos
-            delta_step = getattr(self, 'delta_ext', 1.0)
-
-        # Reducir dosis absorbida si el receptor usa mascarilla
-        mask_rec_mult = np.where(self.has_mask, 1.0 - getattr(self, 'eta_rec', 0.5), 1.0)
-        # Decaimiento ambiental δ por agente analíticamente estable + promedio de dosis
-        self.dosis = self.dosis * np.exp(-delta_step * self.dt) + 0.5 * (R_t + R_pred) * self.dt * mask_rec_mult
-        
-        # --- 4.1 SIMULACIÓN DE PARTÍCULAS DE AEROSOL PARA LA ANIMACIÓN ---
-        # Decaimiento y actualización de partículas existentes
-        if len(self.aerosol_coords) > 0:
-            self.aerosol_dosis *= np.exp(-self.aerosol_decay * self.dt)
-            keep_mask = (self.aerosol_dosis > 0.05)
-            self.aerosol_coords = self.aerosol_coords[keep_mask]
-            self.aerosol_dosis = self.aerosol_dosis[keep_mask]
-            self.aerosol_decay = self.aerosol_decay[keep_mask]
-            
-            if len(self.aerosol_coords) > 0:
-                # Deriva leve de los aerosoles en el aire
-                self.aerosol_coords += np.random.normal(0.0, 0.08, size=self.aerosol_coords.shape)
+            if len(i_idx_p) > 0:
+                dists_p = np.linalg.norm(coords_pred[i_idx_p] - coords_pred[j_idx_p], axis=1)
+                kernel_vals_p = np.exp(-(dists_p**2) / (2.0 * current_ell**2))
                 
-        # Emisión de nuevas partículas por parte de agentes infectados (I)
+                np.add.at(R_pred, i_idx_p, kernel_vals_p * emission_avg[j_idx_p] * mask_I[j_idx_p])
+                np.add.at(R_pred, j_idx_p, kernel_vals_p * emission_avg[i_idx_p] * mask_I[i_idx_p])
+            
+        # Update Lagrangian aerosol particles: decay, drift, and emission
+        self.aerosol_dosis *= np.exp(-self.aerosol_decay * self.dt)
+        keep_mask = (self.aerosol_dosis > 0.05)
+        self.aerosol_coords = self.aerosol_coords[keep_mask]
+        self.aerosol_dosis = self.aerosol_dosis[keep_mask]
+        self.aerosol_decay = self.aerosol_decay[keep_mask]
+        
+        if len(self.aerosol_coords) > 0:
+            # Particles drift slightly in space
+            self.aerosol_coords += np.random.normal(0.0, 0.08, size=self.aerosol_coords.shape)
+            
         if np.any(mask_I):
             new_coords = []
             new_dosis = []
@@ -220,44 +619,67 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
                 x = self.coord_x[idx]
                 y = self.coord_y[idx]
                 
-                # Obtener la tasa de decaimiento en el punto del agente
-                if getattr(self, 'hubs_activos', False):
-                    in_any_hub = np.any([np.linalg.norm(np.array([x, y]) - hub) < r_hub for hub in hubs])
-                    dec = getattr(self, 'delta_cerrado', 0.2) if in_any_hub else getattr(self, 'delta_abierto', 4.0)
+                # Determine local decay rate based on agent's current space
+                mstate = self.motion_state[idx]
+                if mstate == 0:
+                    dec = self.delta_cerrado
+                elif mstate == 2:
+                    h_i = visiting_hub_idx[idx]
+                    dec = self.delta_cerrado if self.hubs_is_closed_space[h_i] else self.delta_abierto
                 else:
-                    dec = getattr(self, 'delta_ext', 1.0)
+                    dec = self.delta_ext
                 
-                # Emitir 2 partículas de aerosol
+                # Emit two small aerosol particles per step
                 for _ in range(2):
                     new_coords.append([x + np.random.normal(0.0, 0.15), y + np.random.normal(0.0, 0.15)])
                     new_dosis.append(1.0)
                     new_decay.append(dec)
-            
+                    
             if len(new_coords) > 0:
-                if len(self.aerosol_coords) > 0:
-                    self.aerosol_coords = np.vstack((self.aerosol_coords, np.array(new_coords, dtype=np.float32)))
-                else:
-                    self.aerosol_coords = np.array(new_coords, dtype=np.float32)
+                self.aerosol_coords = np.vstack((self.aerosol_coords, np.array(new_coords, dtype=np.float32)))
                 self.aerosol_dosis = np.concatenate((self.aerosol_dosis, np.array(new_dosis, dtype=np.float32)))
                 self.aerosol_decay = np.concatenate((self.aerosol_decay, np.array(new_decay, dtype=np.float32)))
                 
-        # Limitar número máximo de partículas a 1200 por rendimiento
+        # Cap particle count to 1200 for high performance rendering
         if len(self.aerosol_coords) > 1200:
             idx_sorted = np.argsort(self.aerosol_dosis)[::-1][:1200]
             self.aerosol_coords = self.aerosol_coords[idx_sorted]
             self.aerosol_dosis = self.aerosol_dosis[idx_sorted]
             self.aerosol_decay = self.aerosol_decay[idx_sorted]
-
-        
-        
-        # Consolidar posiciones predichas
+            
+        # 8. UPDATE DOSIS AND CONSOLIDATE (using spatially heterogeneous decay + mask reception protection)
+        delta_agents = np.full(self.N, self.delta_ext, dtype=np.float32)
+        # Closed spaces: Home (motion_state == 0)
+        delta_agents[self.motion_state == 0] = self.delta_cerrado
+        # Hubs (motion_state == 2)
+        mask_hub_active = (self.motion_state == 2)
+        if np.any(mask_hub_active) and self.H > 0:
+            h_indices = visiting_hub_idx[mask_hub_active]
+            is_closed_h = self.hubs_is_closed_space[h_indices]
+            delta_agents[mask_hub_active] = np.where(is_closed_h, self.delta_cerrado, self.delta_abierto)
+            
+        mask_rec_mult = np.where(self.has_mask, 1.0 - getattr(self, 'eta_rec', 0.5), 1.0)
+        self.dosis = self.dosis * np.exp(-delta_agents * self.dt) + 0.5 * (R_t + R_pred) * self.dt * mask_rec_mult
         self.coord_x = pred_x
         self.coord_y = pred_y
-        
-        # Transición S -> E cuando se supera el umbral de tolerancia acumulada
+
+        # 9. S -> E TRANSITIONS AND INFECTION TRACKING
         mask_S = (self.state == self.S)
         becomes_E = mask_S & (self.dosis >= self.tau_infection)
         
+        if np.any(becomes_E) and np.any(mask_I):
+            idx_I = np.where(mask_I)[0]
+            coords_I = coords_t[idx_I]
+            newly_infected = np.where(becomes_E)[0]
+            for idx_new in newly_infected:
+                pos_new = coords_t[idx_new]
+                dists_to_I = np.linalg.norm(coords_I - pos_new, axis=1)
+                if len(dists_to_I) > 0:
+                    closest_idx = np.argmin(dists_to_I)
+                    parent_id = idx_I[closest_idx]
+                    self.infected_by[idx_new] = parent_id
+                    self.infections_caused[parent_id] += 1
+                    
         self.state[becomes_E] = self.E
         self.time_in_E[becomes_E] = np.random.negative_binomial(self.k_E, self.p_E, size=np.sum(becomes_E))
 
@@ -268,19 +690,47 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             self.telemetry['coord_x'] = []
             self.telemetry['coord_y'] = []
             self.telemetry['dosis'] = []
+            self.telemetry['motion_state'] = []
+            self.telemetry['virus_tiempo'] = []
+            self.telemetry['aerosol_x'] = []
+            self.telemetry['aerosol_y'] = []
+            self.telemetry['aerosol_dosis'] = []
         self.telemetry['coord_x'].append(self.coord_x.copy())
         self.telemetry['coord_y'].append(self.coord_y.copy())
         self.telemetry['dosis'].append(self.dosis.copy())
-
-        self.telemetry_virus['tiempo'].append(t)
+        self.telemetry['motion_state'].append(self.motion_state.copy())
+        self.telemetry['virus_tiempo'].append(t)
         if len(self.aerosol_coords) > 0:
-            self.telemetry_virus['aerosol_x'].append(self.aerosol_coords[:, 0].copy())
-            self.telemetry_virus['aerosol_y'].append(self.aerosol_coords[:, 1].copy())
-            self.telemetry_virus['aerosol_dosis'].append(self.aerosol_dosis.copy())
+            self.telemetry['aerosol_x'].append(self.aerosol_coords[:, 0].copy())
+            self.telemetry['aerosol_y'].append(self.aerosol_coords[:, 1].copy())
+            self.telemetry['aerosol_dosis'].append(self.aerosol_dosis.copy())
         else:
-            self.telemetry_virus['aerosol_x'].append(np.zeros(0, dtype=np.float32))
-            self.telemetry_virus['aerosol_y'].append(np.zeros(0, dtype=np.float32))
-            self.telemetry_virus['aerosol_dosis'].append(np.zeros(0, dtype=np.float32))
+            self.telemetry['aerosol_x'].append(np.zeros(0, dtype=np.float32))
+            self.telemetry['aerosol_y'].append(np.zeros(0, dtype=np.float32))
+            self.telemetry['aerosol_dosis'].append(np.zeros(0, dtype=np.float32))
+
+    def _fase3_transiciones(self, t):
+        """Sobrescribe transiciones para controlar la cuarentena basada en porcentaje de infectados."""
+        super()._fase3_transiciones(t)
+        
+        # Calculate active infected percentage
+        pct_infected = np.sum(self.state == self.I) / self.N
+        
+        # Check if quarantine should trigger
+        quarantine_active = False
+        if getattr(self, "enable_quarantine", True):
+            if pct_infected >= getattr(self, "quarantine_trigger_pct", 0.05):
+                quarantine_active = True
+                
+        if quarantine_active:
+            # E and I agents enter domestic quarantine
+            self.quarantined = (self.state == self.I) | (self.state == self.E)
+        else:
+            self.quarantined.fill(False)
+            
+        # Recovered and Deceased are always released from quarantine
+        self.quarantined[self.state == self.R] = False
+        self.quarantined[self.state == self.D] = False
 
 
     def run(self, output_dir=None, n_seed=10, seed=None):
@@ -308,6 +758,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         x_arr = np.concatenate(self.telemetry['coord_x'])
         y_arr = np.concatenate(self.telemetry['coord_y'])
         dosis_arr = np.concatenate(self.telemetry['dosis'])
+        mstate_arr = np.concatenate(self.telemetry['motion_state'])
         
         df_dinamico = pl.DataFrame({
             "tiempo": tiempo_arr,
@@ -316,7 +767,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             "carga_viral": carga_arr,
             "coord_x": x_arr,
             "coord_y": y_arr,
-            "dosis": dosis_arr
+            "dosis": dosis_arr,
+            "motion_state": mstate_arr
         })
         
         df_dinamico = df_dinamico.sort(["tiempo", "id_agente"])
@@ -325,22 +777,15 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
             path_dir = Path(output_dir)
             df_dinamico.write_parquet(path_dir / "telemetria_dinamica.parquet", compression="snappy")
             print(f"Exportado {path_dir / 'telemetria_dinamica.parquet'} (Continuo)")
-
+            
             # Exportar historial dinámico de partículas de aerosol
             df_virus = pl.DataFrame({
-                "tiempo": self.telemetry_virus['tiempo'],
-                "aerosol_x": [list(x) for x in self.telemetry_virus['aerosol_x']],
-                "aerosol_y": [list(y) for y in self.telemetry_virus['aerosol_y']],
-                "aerosol_dosis": [list(d) for d in self.telemetry_virus['aerosol_dosis']]
+                "tiempo": self.telemetry['virus_tiempo'],
+                "aerosol_x": [list(x) for x in self.telemetry['aerosol_x']],
+                "aerosol_y": [list(y) for y in self.telemetry['aerosol_y']],
+                "aerosol_dosis": [list(d) for d in self.telemetry['aerosol_dosis']]
             })
             df_virus.write_parquet(path_dir / "telemetria_virus.parquet", compression="snappy")
-            print(f"Exportado {path_dir / 'telemetria_virus.parquet'} (Continuo)")
-
+            print(f"Exportado {path_dir / 'telemetria_virus.parquet'}")
             
         return df_dinamico
-
-if __name__ == '__main__':
-    print("Iniciando Motor ABM (Enfoque Continuo)...")
-    sim = ContinuousSEIRSDSimulation(N=1000, L=100.0, t_max=10)
-    sim.run()
-    print("Simulación continua completada exitosamente.")
