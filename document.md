@@ -307,35 +307,91 @@ En regímenes de baja prevalencia ($|I(t)|\ll N$), esta complejidad escala órde
 
 ---
 
-## Parte VI: Análisis de Datos y Métricas
+## Parte VI: Análisis de Datos y Métricas de Inferencia
 
-### 1. Estimación del R₀
+El enfoque orientado a datos (*Data-Oriented*) permite tratar la simulación basada en agentes como un experimento biológico clínico. Se aplican técnicas de bioestadística y análisis de sensibilidad global para extraer conclusiones robustas sobre la propagación y la letalidad.
 
-En la fase exponencial inicial (I(t) ≪ N), la tasa de crecimiento r se relaciona con R₀ según:
+### 1. Estimación del Ritmo Básico de Reproducción ($R_0$) y Tasa $r$
 
+En las fases tempranas de la epidemia (donde la población susceptible $S(t) \approx N$), el crecimiento de la fracción de infectados sigue un régimen exponencial:
+$$I(t) = I_0 \cdot e^{r \cdot t}$$
+
+La tasa de crecimiento exponencial diaria ($r$) se estima mediante regresión lineal por mínimos cuadrados ordinarios (OLS) sobre el logaritmo de las infecciones activas durante la ventana inicial de crecimiento:
+$$\ln(I(t)) = \ln(I_0) + r \cdot t$$
+
+Una vez obtenida $r$, se deduce el $R_0$ exacto a través de la ecuación de Euler-Lotka simplificada para un tiempo de generación medio $T_g$ (periodo de incubación medio más el tiempo promedio hasta el aclaramiento viral):
 $$R_0 = 1 + r \cdot T_g$$
 
-donde Tg es el tiempo generacional medio del patógeno (estimable del modelo OU como el tiempo al pico de Dⱼ). En el continuo, R₀ depende tanto de la persistencia viral (δ) como de la movilidad de los agentes (D_basal).
+---
 
-### 2. Análisis de Supervivencia — Kaplan-Meier
+### 2. Modelo de Cox de Riesgos Proporcionales (Time-Varying)
 
-El tiempo hasta la infección Tᵢ = τᵢⁱⁿᶠ es el evento de interés. Las curvas de Kaplan-Meier estiman la función de supervivencia:
+Para cuantificar cómo influyen el entorno espacial y la genética individual en la tasa instantánea de contagio, se ajusta un Modelo de Regresión de Cox con covariables dependientes del tiempo:
+$$h_i(t) = h_0(t) \cdot \exp\!\Big(\beta_1 \cdot D_i(t) + \beta_2 \cdot \omega_{in,i}\Big)$$
 
-$$\hat{S}(t) = \prod_{t_j \leq t} \left(1 - \frac{d_j}{n_j}\right)$$
+* **Función de Riesgo ($h_i(t)$):** Representa la tasa instantánea de infección para el agente $i$ en el tiempo $t$, dado que ha sobrevivido como susceptible hasta ese instante.
+* **Riesgo Basal ($h_0(t)$):** El riesgo compartido cuando todas las covariables son nulas.
+* **Covariables:**
+  * **$D_i(t)$ (Dosis local de aerosol):** Covariable dinámica que cambia en cada paso temporal según la cercanía a focos infecciosos.
+  * **$\omega_{in,i}$ (Inmunidad innata basal):** Covariable estática determinada genéticamente al inicio por la cópula.
 
-donde dⱼ es el número de nuevas infecciones en tⱼ y nⱼ el número de agentes aún susceptibles. Los agentes no infectados al final de la simulación son censuras derechas.
+#### Interpretación de Hazard Ratios (HR):
+* **$\text{HR}_{\text{dosis}} = e^{\beta_1}$:** Multiplicador del riesgo instantáneo de contagio por cada desviación estándar de incremento en la dosis de aerosol respirada. Un $\text{HR} > 1.0$ valida físicamente que la cercanía espacial a las nubes de aerosol eleva el riesgo de contagio.
+* **$\text{HR}_{\omega_{in}} = e^{\beta_2}$:** Multiplicador del riesgo por cada desviación estándar de aumento en la inmunidad innata. Un $\text{HR} < 1.0$ confirma la efectividad protectora de la barrera inmunológica del agente.
 
-El análisis estratificado por perfil inmune (ωᵢₙ, ωₐd) permite identificar qué componente del vector de vulnerabilidad Ωᵢ domina el riesgo de infección temprana.
+---
 
-### 3. Dataset Multidimensional
+### 3. Curvas de Supervivencia de Kaplan-Meier
 
-Cada agente genera una trayectoria en panel indexado por (agente i, tiempo t):
+El tiempo de permanencia en el compartimento susceptible antes de ser contagiado ($T_i = \tau_i^{inf}$) se modela como un análisis de supervivencia clásica. La probabilidad de que un agente permanezca sano más allá del tiempo $t$ se calcula mediante el estimador de Kaplan-Meier:
+$$\hat{S}(t) = \prod_{t_j \le t} \left(1 - \frac{d_j}{n_j}\right)$$
 
-- **Serie temporal espacial:** {xᵢ(t), yᵢ(t)} — solo en enfoque continuo.
-- **Serie temporal biológica:** {vᵢ(t), Dᵢ(t), AUCᵢ(t)}.
-- **Variables estáticas:** Ωᵢ, τᵢ_umbral (continuo), tᵢⁱⁿᶠ (o censura).
+* **$d_j$:** Número de nuevos agentes que transitan de $S \to E$ (eventos de infección) en el paso de tiempo $t_j$.
+* **$n_j$:** Población en riesgo inmediatamente antes de $t_j$ (agentes que continúan en estado susceptible $S$).
+* **Censura Derecha:** Los agentes que finalizan la simulación sin haberse contagiado se marcan como observaciones censuradas en $T = t_{max}$, aportando información al denominador $n_j$ hasta el final de la serie sin contar como eventos.
 
-Este formato es compatible con modelos de Cox extendidos con covariables dependientes del tiempo.
+El análisis se expone estratificado dividiendo la población según la mediana de la inmunidad innata ($\omega_{in}$), permitiendo evaluar la separación de curvas de supervivencia y demostrar el impacto de la heterogeneidad genética.
+
+---
+
+### 4. Análisis de Sensibilidad Global de Sobol (Método Jansen)
+
+Para evaluar qué parámetros del simulador dominan la varianza de la métrica final (Tasa de Mortalidad $Y = D(t_{final})/N$), se realiza un análisis de sensibilidad global basado en la descomposición de la varianza de Sobol:
+$$V(Y) = \sum_{i} V_i + \sum_{i < j} V_{ij} + \dots + V_{12\dots k}$$
+
+#### 4.1 Índice de Primer Orden (Efecto Directo $S_i$)
+Mide la fracción de la varianza de la mortalidad que se atribuye exclusivamente a la variación del parámetro $X_i$ de forma aislada:
+$$S_i = \frac{V_i}{V(Y)} = \frac{V_{X_i}\big(E_{\mathbf{X}_{\sim i}}[Y|X_i]\big)}{V(Y)}$$
+
+#### 4.2 Índice Total (Efecto Total $S_{Ti}$)
+Mide la contribución total del parámetro $X_i$ a la varianza de la mortalidad, incluyendo su efecto directo y todas sus interacciones no lineales con los demás parámetros:
+$$S_{Ti} = \frac{E_{\mathbf{X}_{\sim i}}\big[V_{X_i}(Y|\mathbf{X}_{\sim i})\big]{}}{V(Y)} = 1 - \frac{V_{\mathbf{X}_{\sim i}}\big(E_{X_i}[Y|\mathbf{X}_{\sim i}]\big)}{V(Y)}$$
+
+#### 4.3 Estimador Robusto de Jansen (1999)
+Para calcular estos índices de manera eficiente y numéricamente estable ante modelos altamente estocásticos, el script genera matrices de Saltelli $A, B \in \mathbb{R}^{N \times k}$ y matrices mixtas $C^{(i)}$ donde todas las columnas provienen de $B$ excepto la columna $i$ que proviene de $A$.
+
+Los estimadores de Jansen calculan la varianza condicional a partir de las diferencias cuadráticas de las respuestas del modelo ($Y_A, Y_B, Y_{C^{(i)}}$):
+* **Varianza Total:**
+  $$V(Y) = \text{Var}(Y_A \cup Y_B)$$
+* **Efecto Total ($S_{Ti}$):**
+  $$S_{Ti} = \frac{\frac{1}{2N} \sum_{j=1}^{N} (Y_{A, j} - Y_{C^{(i)}, j})^2}{V(Y)}$$
+* **Efecto Directo ($S_i$):**
+  $$S_i = 1 - \frac{\frac{1}{2N} \sum_{j=1}^{N} (Y_{B, j} - Y_{C^{(i)}, j})^2}{V(Y)}$$
+
+*Nota de calibración:* Para evitar que el ruido estocástico del movimiento y las SDE contamine los estimadores de Sobol, la semilla estocástica interna de la simulación se congela uniformemente en cada corrida del estimador.
+
+---
+
+### 5. Dataset Multidimensional (Panel Data)
+
+Cada simulación exporta un conjunto de datos en formato panel con series temporales para cada agente $i$ a lo largo de pasos de tiempo $t$:
+* **Coordenadas espaciales:** $\{x_i(t), y_i(t)\}$ (enfoque continuo).
+* **Dinámica viral:** $\{v_i(t)\}$ (carga viral individual).
+* **Contacto y patología:** $\{D_i(t), \text{AUC}_i(t)\}$ (inóculo acumulado y daño).
+* **Estado epidemiológico:** $\text{Estado}_i(t) \in \{S, E, I, R, D\}$.
+* **Metadatos estáticos del agente:** $[\omega_{in,i}, \omega_{ad,i}, \text{edad}_i]$.
+
+Este dataset estructurado en parquet permite realizar auditorías de datos secundarias y calibración de modelos epidemiológicos empíricos externos.
 
 ---
 
