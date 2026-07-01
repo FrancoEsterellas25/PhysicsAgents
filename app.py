@@ -185,9 +185,9 @@ if enfoque == "Continuo (Espacio Físico / Langevin)":
             ))
         with col_pe:
             p_E: float = float(st.number_input(
-                "p_E", min_value=0.05, max_value=0.99,
+                "p_E", min_value=0.0001, max_value=0.99,
                 value=_pval("p_E", 0.5),
-                step=0.01, format="%.2f",
+                step=0.001, format="%.4f",
                 disabled=not is_custom, key="slider_p_E",
             ))
         st.caption(f"Incubacion media: {k_E * (1.0 - p_E) / p_E:.1f} dias")
@@ -307,9 +307,9 @@ else:
             ))
         with col_pe:
             p_E: float = float(st.number_input(
-                "p_E", min_value=0.05, max_value=0.99,
+                "p_E", min_value=0.0001, max_value=0.99,
                 value=_pval("p_E", 0.5),
-                step=0.01, format="%.2f",
+                step=0.001, format="%.4f",
                 disabled=not is_custom, key="slider_p_E",
             ))
         st.caption(f"Incubacion media: {k_E * (1.0 - p_E) / p_E:.1f} dias")
