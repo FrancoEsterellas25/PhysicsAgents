@@ -52,7 +52,7 @@ st.sidebar.markdown("### 🎛️ Configuración del Escenario")
 # Dynamic configuration based on selected approach
 if enfoque == "Continuo (Espacio Físico / Langevin)":
     with st.sidebar.expander("👥 Demografía y Simulación", expanded=True):
-        N_agentes = st.slider("Tamaño Población (N)", min_value=100, max_value=1000, value=400, step=50)
+        N_agentes = st.slider("Tamaño Población (N)", min_value=100, max_value=5000, value=1000, step=50)
         L_espacio = st.slider("Dimensión del Espacio (L)", min_value=20.0, max_value=100.0, value=20.0, step=5.0)
         dias_simulacion = st.slider("Duración (Días)", min_value=10, max_value=150, value=30, step=5)
         seed_I = st.slider("Infectados Iniciales", min_value=1, max_value=20, value=5, step=1)
@@ -211,7 +211,7 @@ if enfoque == "Continuo (Espacio Físico / Langevin)":
 else:
     # Section 1: Población (Discreto)
     with st.sidebar.expander("👥 Dimensiones de la Grilla", expanded=True):
-        grid_side = st.slider("Lado de la Grilla (Dimensión)", min_value=20, max_value=50, value=30, step=5)
+        grid_side = st.slider("Lado de la Grilla (Dimensión)", min_value=20, max_value=80, value=30, step=5)
         N_agentes = grid_side * grid_side
         st.info(f"Población total resultante: {N_agentes} agentes")
         topology = st.selectbox("Topología de Vecindad", options=["moore", "von_neumann", "hexagonal"])
