@@ -270,10 +270,13 @@ El enfoque orientado a datos (*Data-Oriented*) permite tratar la simulación bas
 En las fases tempranas de la epidemia (donde la población susceptible $S(t) \approx N$), el crecimiento de la fracción de infectados sigue un régimen exponencial:
 $$I(t) = I_0 \cdot e^{r \cdot t}$$
 
-La tasa de crecimiento exponencial diaria ($r$) se estima mediante regresión lineal por mínimos cuadrados ordinarios (OLS) sobre el logaritmo de las infecciones activas durante la ventana inicial de crecimiento:
+La tasa de crecimiento exponencial diaria ($r$) se estima mediante regresión lineal por mínimos cuadrados ordinarios (OLS) sobre el logaritmo de las infecciones activas:
 $$\ln(I(t)) = \ln(I_0) + r \cdot t$$
 
-Una vez obtenida $r$, se deduce el $R_0$ exacto a través de la ecuación de Euler-Lotka simplificada para un tiempo de generación medio $T_g$ (periodo de incubación medio más el tiempo promedio hasta el aclaramiento viral):
+Para evitar la subestimación en virus con latencias prolongadas (como el Ébola o la Tuberculosis), la ventana de ajuste se calcula dinámicamente en función del período de incubación medio del patógeno. El inicio del ajuste ($t_{start}$) se desplaza automáticamente según:
+$$t_{start} = \left\lceil k_E \cdot \frac{1 - p_E}{p_E} \right\rceil + 1$$
+
+La regresión lineal se realiza entonces sobre la ventana temporal activa $[t_{start},\; t_{start} + 10]$ días. Una vez obtenida $r$, se deduce el $R_0$ exacto a través de la ecuación de Euler-Lotka para un tiempo de generación medio $T_g$:
 $$R_0 = 1 + r \cdot T_g$$
 
 ---
