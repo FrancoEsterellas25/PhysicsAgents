@@ -90,7 +90,10 @@ class BaseSEIRSDSimulation:
             self.beta_ad_a, self.beta_ad_b
         )
         self.auc_norm_factor = self.v_peak_base * self.tau_max
-        self.k_R, self.p_R = resolver_negbin_params(self.mu_R, self.M_R)
+        if self.mu_R > 0.0:
+            self.k_R, self.p_R = resolver_negbin_params(self.mu_R, self.M_R)
+        else:
+            self.k_R, self.p_R = 1, 0.9999  # Valores de resguardo si mu_R <= 0 (ej: VIH / cronicidad)
         
         # Si se provee output_dir, exportamos mapa_estatico.parquet
         if output_dir is not None:

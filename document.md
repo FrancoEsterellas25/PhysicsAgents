@@ -521,6 +521,8 @@ A continuación se detalla la descripción conceptual y la parametrización de l
   * **Radio de Aerosol Mínimo ($\ell = 0.25$ m):** Modela la transmisión exclusivamente por contacto directo o salpicadura en proximidad absoluta.
   * **Letalidad Extrema ($\lambda = 12.0$):** La pendiente logística es masiva, disparando la mortalidad del agente enfermo a un rango del 50% al 90% según su inmunidad adaptativa.
   * **Tolerancia Alta ($\tau_{max} = 28.0$):** Refleja la barrera de contagio en ausencia de contacto húmedo directo.
+  * *Nota de Simulación:* En el motor continuo Langevin, la combinación de $\ell = 0.25$ m (escala espacial de contacto íntimo) con $\tau_{max} = 28.0$ hace que la probabilidad de contagio en movimiento libre sea prácticamente nula, lo cual representa fielmente que el Ébola carece de capacidad de propagación aérea.
+
 
 #### 3.6 Tuberculosis (Mycobacterium tuberculosis DS)
 * **Descripción Conceptual:** Infección bacteriana crónica de progresión lenta y alta persistencia ambiental. Se propaga por núcleos goticulares finos que resisten la luz solar y la desecación durante horas o días.
@@ -535,6 +537,8 @@ A continuación se detalla la descripción conceptual y la parametrización de l
   * **Sin Recuperación ($\mu_R = 0$ y $M_R = 0$):** Transición a recuperado desactivada.
   * **Latencia de Años ($k_E = 10, p_E = 0.001$):** Incubación promedio extremadamente larga para simular la fase de latencia asintomática de años antes de manifestarse la enfermedad.
   * **Contacto Directo ($\ell = 0.0$):** Sin dispersión aérea alguna.
+  * *Nota de Simulación:* Al definirse $\ell = 0.0$ m (sin aerosol), el campo de inóculo es nulo en todas las coordenadas euclidianas. El VIH no puede propagar contagios en el simulador continuo Langevin al no contemplar este motor el contacto de fluidos íntimos directos.
+
 
 #### 3.8 SARS-CoV-1 (2003)
 * **Descripción Conceptual:** Coronavirus con alta patogenicidad y letalidad. Se asocia fuertemente con eventos de superpropagación en entornos hospitalarios (transmisión nosocomial), facilitando su contención epidemiológica temprana mediante el aislamiento riguroso de casos clínicos evidentes.
