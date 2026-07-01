@@ -43,11 +43,15 @@ from virus_factory import (
 # Mapa: clave interna -> etiqueta visible en el selectbox
 _VIRUS_LABELS: dict[str, str] = {
     "custom"        : "Personalizado  (ajustar sliders manualmente)",
-    "measles"       : "Sarampion  |  R0~15  |  aerosol fino  |  inmunidad vitalicia",
-    "covid19_delta" : "COVID-19 Delta  |  R0~5.5  |  aerosol mixto  |  waning 4 meses",
+    "measles"       : "Sarampion  |  R0~15  |  aerosol fino  |  vitalicio",
+    "covid19_delta" : "COVID-19 Delta  |  R0~5.5  |  aerosol mixto  |  waning 4m",
     "influenza"     : "Influenza Estacional  |  R0~1.3  |  gotas  |  CFR baja",
+    "h1n1_2009" : "Gripe Pandémica 2009 (porcina)  |  R0~1.5  |  alta transmisión jóvenes  |  vacunación",
     "ebola"         : "Ebola Zaire  |  R0~2  |  contacto directo  |  CFR 50%+",
-    "tuberculosis"  : "Tuberculosis  |  R0~10 hacinamiento  |  aerosol persistente",
+    "tuberculosis"  : "Tuberculosis  |  R0~10  |  aerosol persistente",
+    "hiv" : "VIH/SIDA  |  R0~2-5  |  transmisión fluida  |  fase crónica",
+    "sars_2003" : "SARS-CoV-1 (2003)  |  R0~2-3  |  clínico/hospitalario  |  letalidad alta",
+    "junin" : "Fiebre Hemorrágica Arg.  |  vectorial/contacto  |  región pampeana  |  suero inmune"
 }
 _LABEL_TO_KEY: dict[str, str] = {v: k for k, v in _VIRUS_LABELS.items()}
 

@@ -253,7 +253,31 @@ VIRUS_CATALOG["influenza"] = VirusProfile(
 )
 
 # ---------------------------------------------------------------------------
-# 4. EBOLA (Ebolavirus cepa Zaire, brotes 2014-2016)
+# 4. H1N1 (Gripe Pandémica 2009)
+# ---------------------------------------------------------------------------
+# R0 = 1.4-1.6. Transmisión por gotas respiratorias.
+# Impacto demográfico sesgado hacia población joven (inmunidad cruzada previa en ancianos).
+# Modelo: Curva de crecimiento acelerado con caída por agotamiento de susceptibles.
+VIRUS_CATALOG["h1n1_2009"] = VirusProfile(
+    name            = "Gripe Pandémica 2009",
+    description     = "Variante de influenza con alta tasa de ataque en jóvenes. Transmisión por gotas y contacto.",
+    tau_max         = 7.0,
+    ell             = 1.5,     # Gotas de corto alcance
+    delta_ext       = 2.0,     # Moderada estabilidad ambiental
+    delta_cerrado   = 1.0, 
+    delta_abierto   = 3.0, 
+    lam             = 0.2,     # CFR moderada-baja
+    k_E             = 2,       # Incubación rápida (1-4 días)
+    p_E             = 0.5, 
+    mu_R            = 365.0,   # Inmunidad duradera (~1 año o más)
+    M_R             = 365.0,
+    r0_ref          = "R0 ~ 1.4-1.6 (CDC, 2009)",
+    cfr_ref         = "CFR ~ 0.02%",
+    notes           = "Curva epidémica rápida característica de influenza."
+)
+
+# ---------------------------------------------------------------------------
+# 5. EBOLA (Ebolavirus cepa Zaire, brotes 2014-2016)
 # ---------------------------------------------------------------------------
 # R0 = 1.5-2.5. Contacto DIRECTO con fluidos. No aereo en condiciones nat.
 # ell muy pequenio: simula radio de riesgo por salpicadura.
@@ -286,7 +310,7 @@ VIRUS_CATALOG["ebola"] = VirusProfile(
 )
 
 # ---------------------------------------------------------------------------
-# 5. TUBERCULOSIS (Mycobacterium tuberculosis cepa DS)
+# 6. TUBERCULOSIS (Mycobacterium tuberculosis cepa DS)
 # ---------------------------------------------------------------------------
 # R0 = 2-4 (condiciones modernas); 10-14 (hacinamiento).
 # Aerosoles <5um de extrema persistencia. Dosis infecciosa ~1-10 bacilos.
@@ -316,13 +340,96 @@ VIRUS_CATALOG["tuberculosis"] = VirusProfile(
         "(Roth et al. 2004)."
     ),
 )
+# ---------------------------------------------------------------------------
+# 7. VIH/SIDA (Human Immunodeficiency Virus)
+# ---------------------------------------------------------------------------
+# R0 = 2-5 (depende de la red de contacto). Infección crónica asintomática.
+# Transmisión fluida (hemática/sexual). Ausencia de recuperación (R=0).
+# Falla el SEIRSD convencional: requiere un modelo de cronicidad (I -> C).
+VIRUS_CATALOG["hiv"] = VirusProfile(
+    name            = "VIH/SIDA",
+    description     = "Infección viral crónica con largo periodo de latencia. Afecta el sistema inmune debilitando la defensa contra infecciones oportunistas.",
+    tau_max         = 50.0,    # Muy alta: fase crónica de años
+    ell             = 0.0,     # Contacto directo/fluidos
+    delta_ext       = 10.0,    # Inactivación rápida fuera del cuerpo
+    delta_cerrado   = 10.0, 
+    delta_abierto   = 10.0, 
+    lam             = 0.0,     # Letalidad directa baja (muerte por complicaciones tardías)
+    k_E             = 10,      # Periodo de incubación muy largo
+    p_E             = 0.001,   # Transición a fase sintomática lenta
+    mu_R            = 0.0,     # Sin recuperación: cronicidad (permanece en R o estado crónico)
+    M_R             = 0.0,
+    r0_ref          = "R0 ~ 2-5 (dependiendo de la red social/comportamiento)",
+    cfr_ref         = "CFR ~ 80-90% sin tratamiento antirretroviral",
+    notes           = "Modelo: Representar como S -> E -> I (crónico) donde la transición a R es casi nula."
+)
+
+
+# ---------------------------------------------------------------------------
+# 8. SARS-CoV-1 (2003)
+# ---------------------------------------------------------------------------
+# R0 = 2-3. Transmisión hospitalaria dominante (nosocomial).
+# Alta letalidad (CFR >9%) facilita la contención mediante aislamiento riguroso.
+# El riesgo de superpropagación exige modelar "nodos" de alta densidad.
+VIRUS_CATALOG["sars_2003"] = VirusProfile(
+    name            = "SARS-CoV-1 (2003)",
+    description     = "Coronavirus de alta patogenicidad, enfocado en entornos hospitalarios (eventos de superpropagación).",
+    tau_max         = 10.0,
+    ell             = 2.0,     # Transmisión en proximidad hospitalaria
+    delta_ext       = 1.0,     # Estable en superficies
+    delta_cerrado   = 0.5, 
+    delta_abierto   = 2.0, 
+    lam             = 9.6,     # CFR alta (9-10%)
+    k_E             = 5,       # Incubación 2-7 días
+    p_E             = 0.2, 
+    mu_R            = 1000.0,  # Inmunidad robusta post-recuperación
+    M_R             = 1000.0,
+    r0_ref          = "R0 ~ 2.0-3.0",
+    cfr_ref         = "CFR ~ 9.6% (WHO)",
+    notes           = "Requiere alta restricción de contactos (aislamiento) para ser contenido."
+)
+
+# ---------------------------------------------------------------------------
+# 9. FIEBRE HEMORRAGICA ARGENTINA (Virus Junin)
+# ---------------------------------------------------------------------------
+# R0 = 1.0 (aprox, endémico en zonas rurales). Transmision por contacto
+# con excretas de roedores (Calomys musculinus). No aereo.
+# CFR ~30% sin suero inmune; <1% con tratamiento (Maiztegui et al.).
+VIRUS_CATALOG["junin"] = VirusProfile(
+    name          = "Fiebre Hemorrágica Arg. (Virus Junin)",
+    description   = (
+        "Enfermedad viral endémica de la región pampeana. Transmision por "
+        "inhalación de partículas infectadas en ambientes rurales. "
+        "Calibrado con alta letalidad base y baja tasa de transmision persona-persona."
+    ),
+    tau_max       = 30.0,    # requiere exposicion ambiental directa
+    ell           = 0.4,     # metros; contagio por proximidad a aerosoles de rastrojo
+    delta_ext     = 2.0,     # /dia; relativamente estable en condiciones secas
+    delta_cerrado = 1.0,     # /dia
+    delta_abierto = 5.0,     # /dia
+    lam           = 9.0,     # alta letalidad sin soporte serologico
+    k_E           = 2,
+    p_E           = 0.20,    # media E = 2*0.8/0.2 = 8.0 dias
+    mu_R          = 3650.0,  # inmunidad prolongada (~10 años)
+    M_R           = 3650.0,
+    r0_ref        = "R0 ~ 1.0 (Endémico regional)",
+    cfr_ref       = "CFR ~30% (sin tratamiento); <1% (con suero, Maiztegui 1979)",
+    notes         = (
+        "Modelado para entornos rurales (rastrojos). ell=0.4m: simula "
+        "inhalacion de polvo contaminado en cercanía."
+    ),
+)
 
 # Alias convenientes
 VIRUS_CATALOG["sarampion"]   = VIRUS_CATALOG["measles"]
 VIRUS_CATALOG["gripe"]       = VIRUS_CATALOG["influenza"]
+VIRUS_CATALOG["gripe porcina"]       = VIRUS_CATALOG["h1n1_2009"]
 VIRUS_CATALOG["covid"]       = VIRUS_CATALOG["covid19_delta"]
 VIRUS_CATALOG["ebola_zaire"] = VIRUS_CATALOG["ebola"]
 VIRUS_CATALOG["tb"]          = VIRUS_CATALOG["tuberculosis"]
+VIRUS_CATALOG["vih/sida"]       = VIRUS_CATALOG["hiv"]
+VIRUS_CATALOG["sars03"]       = VIRUS_CATALOG["sars_2003"]
+VIRUS_CATALOG["fha"] = VIRUS_CATALOG["junin"]
 
 
 # ===========================================================================
