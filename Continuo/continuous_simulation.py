@@ -80,6 +80,8 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.barbijo_cumplimiento = 0.0
         self.c_DS = 0.0
         self.ds_trigger_pct = 0.05
+        self.export_parquet = True
+
         
         # State tracking for quarantine and R_ef
         self.quarantined = np.zeros(self.N, dtype=bool)
@@ -257,37 +259,39 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         self.remaining_transit_time = np.zeros(self.N, dtype=np.float32)
         self.transit_destination_hub = np.full(self.N, -1, dtype=np.int16)
         
-        base_dir = Path(output_dir) if output_dir is not None else Path(__file__).parent
-        base_dir.mkdir(parents=True, exist_ok=True)
-        
-        df_estatico = pl.DataFrame({
-            "id_agente": self.id_agente,
-            "omega_in": self.omega_in,
-            "omega_ad": self.omega_ad,
-            "tau_infection": self.tau_infection,
-            "hogar_x": self.home_coords[:, 0],
-            "hogar_y": self.home_coords[:, 1],
-            "edad": self.edades
-        })
-        df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
-        print(f"Exportado {base_dir / 'mapa_estatico.parquet'} (Continuo)")
-        
-        # export hubs.parquet if hubs exist
-        if self.H > 0:
-            df_hubs = pl.DataFrame({
-                "x": self.hubs_coords[:, 0],
-                "y": self.hubs_coords[:, 1],
-                "tipo": self.hubs_types,
-                "nombre": hubs_names,
-                "color": hubs_colors,
-                "ambiente": hubs_ambientes
+        if getattr(self, "export_parquet", True):
+            base_dir = Path(output_dir) if output_dir is not None else Path(__file__).parent
+            base_dir.mkdir(parents=True, exist_ok=True)
+            
+            df_estatico = pl.DataFrame({
+                "id_agente": self.id_agente,
+                "omega_in": self.omega_in,
+                "omega_ad": self.omega_ad,
+                "tau_infection": self.tau_infection,
+                "hogar_x": self.home_coords[:, 0],
+                "hogar_y": self.home_coords[:, 1],
+                "edad": self.edades
             })
-            df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
-            print(f"Exportado {base_dir / 'hubs.parquet'}")
-        else:
-            pl.DataFrame({
-                "x": [], "y": [], "tipo": [], "nombre": [], "color": [], "ambiente": []
-            }).write_parquet(base_dir / "hubs.parquet", compression="snappy")
+            df_estatico.write_parquet(base_dir / "mapa_estatico.parquet", compression="snappy")
+            print(f"Exportado {base_dir / 'mapa_estatico.parquet'} (Continuo)")
+            
+            # export hubs.parquet if hubs exist
+            if self.H > 0:
+                df_hubs = pl.DataFrame({
+                    "x": self.hubs_coords[:, 0],
+                    "y": self.hubs_coords[:, 1],
+                    "tipo": self.hubs_types,
+                    "nombre": hubs_names,
+                    "color": hubs_colors,
+                    "ambiente": hubs_ambientes
+                })
+                df_hubs.write_parquet(base_dir / "hubs.parquet", compression="snappy")
+                print(f"Exportado {base_dir / 'hubs.parquet'}")
+            else:
+                pl.DataFrame({
+                    "x": [], "y": [], "tipo": [], "nombre": [], "color": [], "ambiente": []
+                }).write_parquet(base_dir / "hubs.parquet", compression="snappy")
+
             
         # Initialize Lagrangian aerosol particle arrays for gas simulation
         self.aerosol_coords = np.zeros((0, 2), dtype=np.float32)
@@ -779,7 +783,7 @@ class ContinuousSEIRSDSimulation(BaseSEIRSDSimulation):
         
         df_dinamico = df_dinamico.sort(["tiempo", "id_agente"])
         
-        if output_dir is not None:
+        if getattr(self, "export_parquet", True) and output_dir is not None:
             path_dir = Path(output_dir)
             df_dinamico.write_parquet(path_dir / "telemetria_dinamica.parquet", compression="snappy")
             print(f"Exportado {path_dir / 'telemetria_dinamica.parquet'} (Continuo)")

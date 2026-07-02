@@ -53,6 +53,7 @@ def correr_simulacion(params, N_agentes=400, t_max=15):
     sim.ell = ell
     sim.hubs_activos = False
     sim.movimiento_libre = True
+    sim.export_parquet = False
     
     sim.run(output_dir=None, n_seed=10, seed=42)
     
