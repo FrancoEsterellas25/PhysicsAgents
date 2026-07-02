@@ -606,10 +606,10 @@ st.write(
 # Display precalculated high-precision plot by default if it exists
 sobol_img_path = root_path / "Data-Oriented" / "analisis_sobol.png"
 if sobol_img_path.exists():
-    st.markdown("#### 📊 Resultados Precalculados de Alta Precisión (Monte Carlo - N=250)")
+    st.markdown("#### 📊 Resultados Precalculados de Alta Precisión (Monte Carlo - N=500)")
     st.image(
         str(sobol_img_path),
-        caption="Gráfico de Sensibilidad de Sobol Precalculado (1500 simulaciones). Las barras demuestran la influencia de los rangos de cada parámetro en la varianza de la tasa de ataque final.",
+        caption="Gráfico de Sensibilidad de Sobol Precalculado (4000 simulaciones). Las barras demuestran la influencia de los rangos de cada parámetro en la varianza de la tasa de ataque final.",
         use_container_width=True
     )
     
