@@ -38,24 +38,25 @@ def calcular_kaplan_meier(t_inf_arr, t_max):
 
 def estimar_r0(tiempo, infectados, tg=5.0):
     """
-    Estima el R0 inicial ajustando la fase de crecimiento exponencial temprano.
-    R0 = 1 + r * Tg
-    donde r es la tasa de crecimiento exponencial y Tg es el tiempo generacional.
+    Estima el R0 inicial ajustando la fase de crecimiento exponencial temprano
+    buscando la ventana deslizante de 10 días que maximiza la tasa de crecimiento.
     """
-    # Tomar la ventana inicial (por ejemplo, los primeros 10 días o hasta que alcance un pico temprano)
-    # Filtramos donde los infectados sean mayores a 0 y estén en la fase inicial de crecimiento
-    ventana = (tiempo >= 1) & (tiempo <= 10) & (infectados > 0)
-    x = tiempo[ventana]
-    y = np.log(infectados[ventana])
+    best_r = 0.0
+    best_r0 = 1.0
     
-    if len(x) < 2:
-        return 0.0, 0.0
-        
-    # Ajuste lineal simple: log(I) = r * t + C
-    slope, _ = np.polyfit(x, y, 1)
-    r = max(0.0, slope)
-    r0 = 1.0 + r * tg
-    return r0, r
+    # Probar ventanas deslizantes de 10 días de duración
+    t_limit = int(tiempo[-1] - 10)
+    for t_start in range(1, max(2, t_limit)):
+        ventana = (tiempo >= t_start) & (tiempo <= t_start + 10) & (infectados > 0)
+        x = tiempo[ventana]
+        y = np.log(infectados[ventana])
+        if len(x) >= 3:
+            slope, _ = np.polyfit(x, y, 1)
+            if slope > best_r:
+                best_r = slope
+                best_r0 = 1.0 + slope * tg
+                
+    return best_r0, best_r
 
 def analizar_enfoque(nombre, path_dir, output_img_dir):
     mapa_path = path_dir / "mapa_estatico.parquet"
